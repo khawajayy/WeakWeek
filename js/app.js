@@ -38,8 +38,7 @@ const HABITS = [
   { id: "steps8k",     label: "6,000+ Steps",             group: "Body",  xp: 15 }, // id kept for saved-data compatibility
   { id: "read30",      label: "Read 30 Minutes",          group: "Mind",  xp: 15 },
   { id: "journalPM",   label: "Journal Night",            group: "Mind",  xp: 10 },
-  { id: "cleanRoom",   label: "Clean Room 20 Minutes",    group: "Mind",  xp: 10 },
-  { id: "screenUnder1h", label: "Phone Screen Time < 1 Hour", group: "Mind", xp: 20 },
+  { id: "screenUnder1h", label: "Phone Screen Time < 2 Hours", group: "Mind", xp: 20 }, // id kept for saved-data compatibility
   { id: "deepWork3h",  label: "Deep Work ≥ 3 Hours",      group: "Career Engine", xp: 25 },
   { id: "aiLearning",  label: "AI Learning",              group: "Career Engine", xp: 15 },
   { id: "qaLearning",  label: "QA Learning",              group: "Career Engine", xp: 15 },
@@ -52,7 +51,7 @@ const HABITS = [
 // day must go through this filter so day % and perfect-day stay fair
 function habitsForDay(n) { return HABITS.filter(h => !h.days || h.days.includes(n)); }
 
-const SCREEN_LIMIT_MIN = 60;
+const SCREEN_LIMIT_MIN = 120;
 const SCREEN_PENALTY = 20;
 
 const RANKS = [
@@ -93,7 +92,7 @@ const QUOTES = [
 const GOALS = {
   sleepHours: 8, workoutMin: 45, waterL: 3, proteinG: 100, calories: 2200,
   steps: 6000, walkMin: 30, deepWorkH: 3, pomodoros: 6, readMin: 30, pages: 20,
-  learnMin: 60, screenMin: 60, cleanMin: 20, journalCount: 2,
+  learnMin: 60, screenMin: 120, journalCount: 2,
 };
 
 const ACHIEVEMENTS = [
@@ -107,7 +106,7 @@ const ACHIEVEMENTS = [
   { id: "streak3",     name: "Heating Up",        icon: "🔥", xp: 30,  desc: "3-day streak (≥60% days)" },
   { id: "streak7",     name: "7-Day Streak",      icon: "🌋", xp: 100, desc: "Full week streak" },
   { id: "deepWork",    name: "Deep Work Master",  icon: "🧠", xp: 75,  desc: "15+ deep work hours this week" },
-  { id: "phoneDetox",  name: "Phone Detox",       icon: "📵", xp: 50,  desc: "Screen < 60 min, 3 days" },
+  { id: "phoneDetox",  name: "Phone Detox",       icon: "📵", xp: 50,  desc: "Screen < 2h on 3 days" },
   { id: "hydration",   name: "Hydro Homie",       icon: "💧", xp: 30,  desc: "3L water on 3 days" },
   { id: "bookworm",    name: "Bookworm",          icon: "📚", xp: 40,  desc: "Read 150+ pages this week" },
   { id: "earlyRiser",  name: "Early Riser",       icon: "🌅", xp: 40,  desc: "Wake at 8 AM on 5 days" },
@@ -133,7 +132,6 @@ function emptyDay() {
       freelanceMin: null, contentMin: null, applications: 0, resumeImp: 0, linkedinImp: 0, sideProjectMin: null,
       screenMin: null, socialMin: null, youtubeMin: null, entertainmentMin: null,
       bookTitle: "", pages: null, readMin: null, booksFinished: 0,
-      cleanMin: null,
     },
     journal: { p1: "", p2: "", p3: "", mission: "", wins: "", lessons: "", gratitude: "" },
   };
@@ -300,7 +298,7 @@ function checkAchievements(week) {
     streak3: week.streak >= 3,
     streak7: week.streak >= 7,
     deepWork: state.days.reduce((s, d, i) => s + (m(i).deepWorkH || 0), 0) >= 15,
-    phoneDetox: state.days.filter((d, i) => m(i).screenMin != null && m(i).screenMin < 60).length >= 3,
+    phoneDetox: state.days.filter((d, i) => m(i).screenMin != null && m(i).screenMin < SCREEN_LIMIT_MIN).length >= 3,
     hydration: state.days.filter((d, i) => (m(i).waterL || 0) >= 3 || d.habits.water3l).length >= 3,
     bookworm: state.days.reduce((s, d, i) => s + (m(i).pages || 0), 0) >= 150,
     earlyRiser: state.days.filter(d => d.habits.wake8).length >= 5,
@@ -762,7 +760,6 @@ function renderMetricCards() {
     metricCard({ icon: "💧", title: "Water", value: m.waterL ?? "–", unit: "L", pct: m.waterL ? m.waterL / GOALS.waterL * 100 : 0, color: "var(--blue)", sub: `goal ${GOALS.waterL}L`, input: quickInput("waterL", 0.25, "liters") }),
     metricCard({ icon: "🚶", title: "Walking", value: m.steps != null ? m.steps.toLocaleString() : "–", unit: "steps", pct: m.steps ? m.steps / GOALS.steps * 100 : 0, color: "var(--green)", sub: `goal ${GOALS.steps.toLocaleString()}`, input: quickInput("steps", 500, "steps") }),
     metricCard({ icon: "📓", title: "Journaling", value: `${journalDone}/2`, unit: "", pct: journalDone / 2 * 100, color: "var(--gold)", sub: journalDone === 2 ? "AM + PM done" : "morning + night" }),
-    metricCard({ icon: "🧹", title: "Cleaning", value: m.cleanMin ?? "–", unit: "min", pct: m.cleanMin ? m.cleanMin / GOALS.cleanMin * 100 : 0, color: "var(--violet)", sub: `goal ${GOALS.cleanMin} min`, input: quickInput("cleanMin", 5, "min") }),
     metricCard({ icon: "🙂", title: "Mood", value: m.mood ? EMOJI[m.mood - 1] : "–", unit: "", sub: "how do you feel?", input: emojiScale("mood", m.mood) }),
     metricCard({ icon: "⚡", title: "Energy", value: m.energy ? EMOJI[m.energy - 1] : "–", unit: "", sub: "battery level", input: emojiScale("energy", m.energy) }),
   ];
