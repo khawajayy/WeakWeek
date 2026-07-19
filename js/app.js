@@ -24,6 +24,10 @@ const HABITS = [
   { id: "noSnooze",    label: "No Snooze",                group: "Morning Protocol",  xp: 10 },
   { id: "makeBreakfast", label: "Make Breakfast for her",  group: "Morning Protocol",  xp: 10, days: [1, 2, 3, 4, 5] }, // workdays only (Day 1 = Monday)
   { id: "journalAM",   label: "Journal Morning",          group: "Morning Protocol",  xp: 10 },
+  { id: "prayerDhuhr",   label: "Dhuhr",                  group: "Prayer 🕌", xp: 15 },
+  { id: "prayerAsr",     label: "Asr",                    group: "Prayer 🕌", xp: 15 },
+  { id: "prayerMaghrib", label: "Maghrib",                group: "Prayer 🕌", xp: 15 },
+  { id: "prayerIsha",    label: "Isha",                   group: "Prayer 🕌", xp: 15 },
   { id: "noDew",       label: "No Mountain Dew",          group: "Nutrition Discipline", xp: 20, penalty: 15 },
   { id: "noSugar",     label: "No Sugar",                 group: "Nutrition Discipline", xp: 20, penalty: 15 },
   { id: "noJunk",      label: "No Junk Food",             group: "Nutrition Discipline", xp: 15, penalty: 10 },
@@ -107,6 +111,8 @@ const ACHIEVEMENTS = [
   { id: "bookworm",    name: "Bookworm",          icon: "📚", xp: 40,  desc: "Read 150+ pages this week" },
   { id: "earlyRiser",  name: "Early Riser",       icon: "🌅", xp: 40,  desc: "Wake at 8 AM on 5 days" },
   { id: "jobHunter",   name: "Job Hunter",        icon: "🎯", xp: 40,  desc: "Send 5+ applications" },
+  { id: "prayers3",    name: "Steadfast · 3 Days", icon: "🕌", xp: 50,  desc: "All 4 prayers, 3 days" },
+  { id: "prayers7",    name: "Steadfast · 7 Days", icon: "🌙", xp: 100, desc: "All 4 prayers, every day" },
   { id: "perfectDay",  name: "Perfect Day",       icon: "🌟", xp: 75,  desc: "100% habits in one day" },
   { id: "monkMode",    name: "Monk Mode",         icon: "🧘", xp: 100, desc: "3 perfect days in the week" },
   { id: "perfectWeek", name: "Perfect Week",      icon: "🏆", xp: 200, desc: "7 perfect days. Legend." },
@@ -280,6 +286,8 @@ function checkAchievements(week) {
   const m = i => state.days[i].metrics;
   const anyHabit = state.days.some(d => Object.values(d.habits).some(Boolean));
   const perfectDays = week.days.filter(d => d.perfect).length;
+  const PRAYERS = ["prayerDhuhr", "prayerAsr", "prayerMaghrib", "prayerIsha"];
+  const fullPrayerDays = state.days.filter(d => PRAYERS.every(p => d.habits[p])).length;
   const conditions = {
     firstHabit: anyHabit,
     firstWorkout: state.days.some(d => d.habits.gymOrWalk),
@@ -296,6 +304,8 @@ function checkAchievements(week) {
     bookworm: state.days.reduce((s, d, i) => s + (m(i).pages || 0), 0) >= 150,
     earlyRiser: state.days.filter(d => d.habits.wake8).length >= 5,
     jobHunter: state.days.reduce((s, d, i) => s + (m(i).applications || 0), 0) >= 5,
+    prayers3: fullPrayerDays >= 3,
+    prayers7: fullPrayerDays >= 7,
     perfectDay: perfectDays >= 1,
     monkMode: perfectDays >= 3,
     perfectWeek: perfectDays >= 7,
