@@ -22,7 +22,7 @@ const STORAGE_KEY = "weekMaxxing.v1";
 const HABITS = [
   { id: "wake8",       label: "Wake at 8 AM",             group: "Morning Protocol",  xp: 15 },
   { id: "noSnooze",    label: "No Snooze",                group: "Morning Protocol",  xp: 10 },
-  { id: "makeBed",     label: "Make Bed",                 group: "Morning Protocol",  xp: 5  },
+  { id: "makeBreakfast", label: "Make Breakfast for her",  group: "Morning Protocol",  xp: 10, days: [1, 2, 3, 4, 5] }, // workdays only (Day 1 = Monday)
   { id: "journalAM",   label: "Journal Morning",          group: "Morning Protocol",  xp: 10 },
   { id: "noDew",       label: "No Mountain Dew",          group: "Nutrition Discipline", xp: 20, penalty: 15 },
   { id: "noSugar",     label: "No Sugar",                 group: "Nutrition Discipline", xp: 20, penalty: 15 },
@@ -31,8 +31,7 @@ const HABITS = [
   { id: "water3l",     label: "Drink 3L Water",           group: "Nutrition Discipline", xp: 15 },
   { id: "protein100",  label: "Protein ≥ 100g",           group: "Nutrition Discipline", xp: 15 },
   { id: "gymOrWalk",   label: "Gym OR Walk",              group: "Body",  xp: 20 },
-  { id: "steps8k",     label: "8,000+ Steps",             group: "Body",  xp: 15 },
-  { id: "stretch",     label: "Stretch 10 Minutes",       group: "Body",  xp: 10 },
+  { id: "steps8k",     label: "6,000+ Steps",             group: "Body",  xp: 15 }, // id kept for saved-data compatibility
   { id: "read30",      label: "Read 30 Minutes",          group: "Mind",  xp: 15 },
   { id: "journalPM",   label: "Journal Night",            group: "Mind",  xp: 10 },
   { id: "cleanRoom",   label: "Clean Room 20 Minutes",    group: "Mind",  xp: 10 },
@@ -44,7 +43,9 @@ const HABITS = [
   { id: "sleepBefore12", label: "Sleep before 12 AM",     group: "Sleep", xp: 15, penalty: 10 },
 ];
 
-const MAX_DAY_XP = HABITS.reduce((s, h) => s + h.xp, 0); // 325
+// habits may be limited to specific days (e.g. workdays); everything scoring a
+// day must go through this filter so day % and perfect-day stay fair
+function habitsForDay(n) { return HABITS.filter(h => !h.days || h.days.includes(n)); }
 
 const SCREEN_LIMIT_MIN = 60;
 const SCREEN_PENALTY = 20;
@@ -86,7 +87,7 @@ const QUOTES = [
 
 const GOALS = {
   sleepHours: 8, workoutMin: 45, waterL: 3, proteinG: 100, calories: 2200,
-  steps: 8000, walkMin: 30, deepWorkH: 3, pomodoros: 6, readMin: 30, pages: 20,
+  steps: 6000, walkMin: 30, deepWorkH: 3, pomodoros: 6, readMin: 30, pages: 20,
   learnMin: 60, screenMin: 60, cleanMin: 20, journalCount: 2,
 };
 
@@ -195,7 +196,7 @@ function dayPenalties(n) {
   const out = [];
   if (isFutureDay(n)) return out;
   const isToday = n === todayDayNumber();
-  for (const h of HABITS) {
+  for (const h of habitsForDay(n)) {
     if (!h.penalty) continue;
     // discipline penalties land once the day is over (or live if metrics prove it)
     if (!day.habits[h.id] && !isToday) {
@@ -213,16 +214,18 @@ function dayPenalties(n) {
 
 function computeDay(n) {
   const day = state.days[n - 1];
-  const doneHabits = HABITS.filter(h => day.habits[h.id]);
+  const applicable = habitsForDay(n);
+  const doneHabits = applicable.filter(h => day.habits[h.id]);
   const earned = doneHabits.reduce((s, h) => s + h.xp, 0);
   const penalties = dayPenalties(n);
   const penaltyXp = penalties.reduce((s, p) => s + p.xp, 0);
   const score = Math.max(0, earned - penaltyXp);
-  const pct = Math.round((doneHabits.length / HABITS.length) * 100);
+  const pct = Math.round((doneHabits.length / applicable.length) * 100);
   return {
     n, earned, penalties, penaltyXp, score, pct,
     habitsDone: doneHabits.length,
-    perfect: doneHabits.length === HABITS.length,
+    habitsTotal: applicable.length,
+    perfect: doneHabits.length === applicable.length,
   };
 }
 
@@ -667,12 +670,13 @@ function renderScoreCard(week) {
 function renderHabits(week) {
   const day = selDay();
   const d = week.days[state.selectedDay - 1];
-  const groups = [...new Set(HABITS.map(h => h.group))];
+  const dayHabits = habitsForDay(state.selectedDay);
+  const groups = [...new Set(dayHabits.map(h => h.group))];
   $("#habit-list").innerHTML = groups.map(g => `
     <div>
       <div class="habit-group-title">${g}</div>
       <div class="habit-items">
-        ${HABITS.filter(h => h.group === g).map(h => `
+        ${dayHabits.filter(h => h.group === g).map(h => `
           <label class="habit ${day.habits[h.id] ? "checked" : ""} ${h.penalty && !day.habits[h.id] && isPastOrToday(state.selectedDay) ? "penalty-live" : ""}" data-habit="${h.id}">
             <input type="checkbox" ${day.habits[h.id] ? "checked" : ""}>
             <span class="hb-box">✓</span>
@@ -681,7 +685,7 @@ function renderHabits(week) {
           </label>`).join("")}
       </div>
     </div>`).join("");
-  $("#habit-count").textContent = `${d.habitsDone}/${HABITS.length} · ${d.earned} XP earned`;
+  $("#habit-count").textContent = `${d.habitsDone}/${d.habitsTotal} · ${d.earned} XP earned`;
   $("#habit-progress-fill").style.width = d.pct + "%";
 }
 
@@ -952,7 +956,7 @@ function renderAnalytics(week) {
   const defs = [
     { title: "Daily Score", sub: "habit XP minus penalties", html: Charts.bar({ values: week.days.map(d => d.score), unit: " XP", color: "var(--chart-blue)" }) },
     { title: "Cumulative XP", sub: "total XP growth across the week", html: Charts.line({ values: week.days.reduce((acc, d, i) => { acc.push((acc[i - 1] || 0) + d.score); return acc; }, []), unit: " XP", color: "var(--chart-gold)", area: true }) },
-    { title: "Habit Completion", sub: "% of 22 daily habits", html: Charts.bar({ values: week.days.map(d => d.pct), unit: "%", max: 100, color: "var(--chart-green)" }) },
+    { title: "Habit Completion", sub: "% of that day's habits", html: Charts.bar({ values: week.days.map(d => d.pct), unit: "%", max: 100, color: "var(--chart-green)" }) },
     { title: "Sleep", sub: `goal ${GOALS.sleepHours}h`, html: Charts.line({ values: days.map(d => d.metrics.sleepHours), goal: GOALS.sleepHours, unit: "h", color: "var(--chart-violet)" }) },
     { title: "Workout Minutes", sub: `goal ${GOALS.workoutMin} min`, html: Charts.bar({ values: days.map(d => d.metrics.workoutMin || 0), goal: GOALS.workoutMin, unit: "m", color: "var(--chart-blue)" }) },
     { title: "Water", sub: `goal ${GOALS.waterL}L`, html: Charts.bar({ values: days.map(d => d.metrics.waterL || 0), goal: GOALS.waterL, unit: "L", color: "var(--chart-blue)" }) },
@@ -1107,9 +1111,11 @@ function renderReport() {
     </div>`;
 
   const heatRows = HABITS.map(h => `
-    <tr><th>${h.label}</th>${state.days.map((d, i) =>
-      `<td class="${i + 1 > week.today ? "future-cell" : d.habits[h.id] ? "done" : "missed"}" title="${h.label} — Day ${i + 1}"></td>`
-    ).join("")}</tr>`).join("");
+    <tr><th>${h.label}</th>${state.days.map((d, i) => {
+      const applies = !h.days || h.days.includes(i + 1);
+      const cls = !applies ? "future-cell" : i + 1 > week.today ? "future-cell" : d.habits[h.id] ? "done" : "missed";
+      return `<td class="${cls}" title="${h.label} — Day ${i + 1}${applies ? "" : " (off day)"}"></td>`;
+    }).join("")}</tr>`).join("");
 
   $("#report-content").innerHTML = `
     <div class="report-grade-row">
@@ -1175,7 +1181,7 @@ function updateAll(opts = {}) {
   renderDayTabs(finalWeek);
   renderScoreCard(finalWeek);
   renderWarnings(finalWeek);
-  $("#habit-count").textContent = `${finalWeek.days[state.selectedDay - 1].habitsDone}/${HABITS.length} · ${finalWeek.days[state.selectedDay - 1].earned} XP earned`;
+  $("#habit-count").textContent = `${finalWeek.days[state.selectedDay - 1].habitsDone}/${finalWeek.days[state.selectedDay - 1].habitsTotal} · ${finalWeek.days[state.selectedDay - 1].earned} XP earned`;
   $("#habit-progress-fill").style.width = finalWeek.days[state.selectedDay - 1].pct + "%";
 
   if (opts.fullHabits !== false) renderHabits(finalWeek);
