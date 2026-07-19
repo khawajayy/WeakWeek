@@ -43,7 +43,8 @@ const HABITS = [
   { id: "deepWork3h",  label: "Deep Work ≥ 3 Hours",      group: "Career Engine", xp: 25 },
   { id: "aiLearning",  label: "AI Learning",              group: "Career Engine", xp: 15 },
   { id: "qaLearning",  label: "QA Learning",              group: "Career Engine", xp: 15 },
-  { id: "portfolio",   label: "Portfolio Work",           group: "Career Engine", xp: 15 },
+  { id: "freelance",   label: "Freelance",                group: "Career Engine", xp: 15 },
+  { id: "contentCreation", label: "Content Creation",     group: "Career Engine", xp: 15 },
   { id: "sleepBefore12", label: "Sleep before 12 AM",     group: "Sleep", xp: 15, penalty: 10 },
 ];
 
@@ -129,7 +130,7 @@ function emptyDay() {
       sleepHours: null, weight: null, proteinG: null, calories: null, waterL: null,
       workoutMin: null, walkMin: null, steps: null, energy: 0, recovery: 0, mood: 0,
       deepWorkH: null, pomodoros: 0, playwrightMin: null, aiMin: null,
-      portfolioMin: null, applications: 0, resumeImp: 0, linkedinImp: 0, sideProjectMin: null,
+      freelanceMin: null, contentMin: null, applications: 0, resumeImp: 0, linkedinImp: 0, sideProjectMin: null,
       screenMin: null, socialMin: null, youtubeMin: null, entertainmentMin: null,
       bookTitle: "", pages: null, readMin: null, booksFinished: 0,
       cleanMin: null,
@@ -777,7 +778,8 @@ function renderCareer() {
     stepperField("pomodoros", "Pomodoros", m.pomodoros),
     numberField("playwrightMin", "Playwright / QA Learning", "min", m.playwrightMin, { step: 5 }),
     numberField("aiMin", "AI Engineering Learning", "min", m.aiMin, { step: 5 }),
-    numberField("portfolioMin", "Portfolio Progress", "min", m.portfolioMin, { step: 5 }),
+    numberField("freelanceMin", "Freelance", "min", m.freelanceMin, { step: 5 }),
+    numberField("contentMin", "Content Creation", "min", m.contentMin, { step: 5 }),
     stepperField("applications", "Applications Sent", m.applications),
     stepperField("resumeImp", "Resume Improvements", m.resumeImp),
     stepperField("linkedinImp", "LinkedIn Improvements", m.linkedinImp),
@@ -787,7 +789,7 @@ function renderCareer() {
   const days = state.days;
   const dw = days.map(d => d.metrics.deepWorkH);
   const apps = days.map(d => d.metrics.applications || 0);
-  const learn = days.map(d => (d.metrics.aiMin || 0) + (d.metrics.playwrightMin || 0) + (d.metrics.portfolioMin || 0) + (d.metrics.sideProjectMin || 0));
+  const learn = days.map(d => (d.metrics.aiMin || 0) + (d.metrics.playwrightMin || 0) + (d.metrics.freelanceMin || 0) + (d.metrics.contentMin || 0) + (d.metrics.sideProjectMin || 0));
   const totApps = apps.reduce((a, b) => a + b, 0);
   const totDw = dw.reduce((a, b) => a + (b || 0), 0);
   $("#career-charts").innerHTML = `
@@ -796,7 +798,7 @@ function renderCareer() {
       ${Charts.bar({ values: dw.map(v => v || 0), goal: GOALS.deepWorkH, unit: "h", color: "var(--chart-blue)" })}
     </div>
     <div class="chart-card" style="padding:0 0 10px">
-      <h3>Learning + Building Minutes</h3><div class="chart-sub">AI + QA + portfolio + side project</div>
+      <h3>Learning + Building Minutes</h3><div class="chart-sub">AI + QA + freelance + content + side project</div>
       ${Charts.bar({ values: learn, unit: "m", color: "var(--chart-violet)" })}
     </div>
     <div class="chart-card" style="padding:0">
@@ -1006,7 +1008,7 @@ function computeReportScores(week) {
   const productivity = cap(avg(days.slice(0, elapsed).map((d, i) => {
     const m = d.metrics;
     const dw = Math.min((m.deepWorkH || 0) / GOALS.deepWorkH, 1.2);
-    const habits = ["deepWork3h", "portfolio"].filter(h => d.habits[h]).length / 2;
+    const habits = ["deepWork3h", "freelance", "contentCreation"].filter(h => d.habits[h]).length / 3;
     return (dw * 60 + habits * 40);
   })));
 
@@ -1029,10 +1031,10 @@ function computeReportScores(week) {
 
   const career = cap(avg(days.slice(0, elapsed).map(d => {
     const m = d.metrics;
-    const learn = (m.aiMin || 0) + (m.playwrightMin || 0) + (m.portfolioMin || 0);
+    const learn = (m.aiMin || 0) + (m.playwrightMin || 0) + (m.freelanceMin || 0) + (m.contentMin || 0);
     let pts = Math.min((m.deepWorkH || 0) / GOALS.deepWorkH, 1) * 40;
     pts += Math.min(learn / GOALS.learnMin, 1) * 30;
-    pts += ["aiLearning", "qaLearning", "portfolio"].filter(h => d.habits[h]).length / 3 * 30;
+    pts += ["aiLearning", "qaLearning", "freelance", "contentCreation"].filter(h => d.habits[h]).length / 4 * 30;
     return pts;
   })) + Math.min(days.reduce((s, d) => s + (d.metrics.applications || 0), 0) * 3, 15));
 
