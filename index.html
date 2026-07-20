@@ -122,6 +122,7 @@
   <!-- ============ NAV TABS ============ -->
   <nav class="section-tabs glass" id="section-tabs">
     <button class="section-tab active" data-panel="panel-today">Today</button>
+    <button class="section-tab" data-panel="panel-tasks">Tasks</button>
     <button class="section-tab" data-panel="panel-career">Career</button>
     <button class="section-tab" data-panel="panel-fitness">Fitness</button>
     <button class="section-tab" data-panel="panel-detox">Detox</button>
@@ -154,6 +155,28 @@
       <div class="today-side">
         <div class="metric-cards" id="metric-cards"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ TASKS PANEL ============ -->
+  <section class="panel" id="panel-tasks">
+    <div class="card glass">
+      <div class="card-header">
+        <h2>✅ Tasks</h2>
+        <span class="card-header-meta" id="task-count"></span>
+      </div>
+      <div class="task-add">
+        <div class="task-flags" id="task-flags" title="Priority">
+          <button type="button" class="task-flag p1" data-p="1" title="P1 · +15 XP">⚑</button>
+          <button type="button" class="task-flag p2" data-p="2" title="P2 · +10 XP">⚑</button>
+          <button type="button" class="task-flag p3" data-p="3" title="P3 · +8 XP">⚑</button>
+          <button type="button" class="task-flag p4 sel" data-p="4" title="P4 · +5 XP">⚑</button>
+        </div>
+        <input type="text" id="task-input" placeholder='Add a task… tip: end with !1–!4 to set priority' maxlength="200">
+        <select id="task-day" title="Schedule"></select>
+        <button type="button" class="btn-primary btn-sm" id="task-add-btn">Add</button>
+      </div>
+      <div id="task-sections"></div>
     </div>
   </section>
 
@@ -267,6 +290,7 @@
       <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Jump to Day 1–7</td></tr>
       <tr><td><kbd>T</kbd></td><td>Toggle dark / light theme</td></tr>
       <tr><td><kbd>H</kbd></td><td>Go to Today panel</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Go to Tasks (to-do list)</td></tr>
       <tr><td><kbd>A</kbd></td><td>Go to Analytics</td></tr>
       <tr><td><kbd>G</kbd></td><td>Go to Achievements</td></tr>
       <tr><td><kbd>R</kbd></td><td>Generate Week Report</td></tr>

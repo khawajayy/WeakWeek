@@ -52,6 +52,9 @@ const HABITS = [
 function habitsForDay(n) { return HABITS.filter(h => !h.days || h.days.includes(n)); }
 
 const SCREEN_LIMIT_MIN = 120;
+
+// to-do list: XP per completed task, by priority (P1 = most important)
+const TASK_XP = { 1: 15, 2: 10, 3: 8, 4: 5 };
 const SCREEN_PENALTY = 20;
 
 const RANKS = [
@@ -111,6 +114,8 @@ const ACHIEVEMENTS = [
   { id: "bookworm",    name: "Bookworm",          icon: "📚", xp: 40,  desc: "Read 150+ pages this week" },
   { id: "earlyRiser",  name: "Early Riser",       icon: "🌅", xp: 40,  desc: "Wake at 8 AM on 5 days" },
   { id: "jobHunter",   name: "Job Hunter",        icon: "🎯", xp: 40,  desc: "Send 5+ applications" },
+  { id: "taskSlayer",  name: "Task Slayer",       icon: "⚔️", xp: 30,  desc: "Complete 10 tasks" },
+  { id: "inboxZero",   name: "Inbox Zero",        icon: "📮", xp: 40,  desc: "Clear a day with 3+ tasks" },
   { id: "prayers3",    name: "Steadfast · 3 Days", icon: "🕌", xp: 50,  desc: "All 4 prayers, 3 days" },
   { id: "prayers7",    name: "Steadfast · 7 Days", icon: "🌙", xp: 100, desc: "All 4 prayers, every day" },
   { id: "perfectDay",  name: "Perfect Day",       icon: "🌟", xp: 75,  desc: "100% habits in one day" },
@@ -144,6 +149,8 @@ function defaultState() {
     theme: "dark",
     meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {}, lastModified: 0 },
     days: Array.from({ length: WEEK_DAYS }, emptyDay),
+    // {id, text, priority 1-4, day 1-7|null (null = anytime), done, doneDay, createdAt}
+    tasks: [],
   };
 }
 
@@ -164,6 +171,7 @@ function normalizeState(saved) {
       journal: { ...d.journal, ...(sd.journal || {}) },
     };
   });
+  state.tasks = Array.isArray(saved.tasks) ? saved.tasks : [];
   return state;
 }
 
@@ -229,12 +237,13 @@ function computeDay(n) {
   const applicable = habitsForDay(n);
   const doneHabits = applicable.filter(h => day.habits[h.id]);
   const earned = doneHabits.reduce((s, h) => s + h.xp, 0);
+  const taskXp = state.tasks.reduce((s, t) => s + (t.done && t.doneDay === n ? (TASK_XP[t.priority] || 5) : 0), 0);
   const penalties = dayPenalties(n);
   const penaltyXp = penalties.reduce((s, p) => s + p.xp, 0);
-  const score = Math.max(0, earned - penaltyXp);
+  const score = Math.max(0, earned + taskXp - penaltyXp);
   const pct = Math.round((doneHabits.length / applicable.length) * 100);
   return {
-    n, earned, penalties, penaltyXp, score, pct,
+    n, earned, taskXp, penalties, penaltyXp, score, pct,
     habitsDone: doneHabits.length,
     habitsTotal: applicable.length,
     perfect: doneHabits.length === applicable.length,
@@ -310,6 +319,11 @@ function checkAchievements(week) {
     bookworm: state.days.reduce((s, d, i) => s + (m(i).pages || 0), 0) >= 150,
     earlyRiser: state.days.filter(d => d.habits.wake8).length >= 5,
     jobHunter: state.days.reduce((s, d, i) => s + (m(i).applications || 0), 0) >= 5,
+    taskSlayer: state.tasks.filter(t => t.done).length >= 10,
+    inboxZero: Array.from({ length: 7 }, (_, i) => i + 1).some(n => {
+      const assigned = state.tasks.filter(t => t.day === n);
+      return assigned.length >= 3 && assigned.every(t => t.done);
+    }),
     prayers3: fullPrayerDays >= 3,
     prayers7: fullPrayerDays >= 7,
     perfectDay: perfectDays >= 1,
@@ -413,12 +427,15 @@ function animateValue(el, to, fmt = v => Math.round(v).toLocaleString()) {
   if (from === to) { el.textContent = fmt(to); return; }
   const start = performance.now(), dur = 600;
   function step(t) {
+    if (counters.get(el) !== to) return; // a newer tween took over
     const p = Math.min((t - start) / dur, 1);
     const e = 1 - Math.pow(1 - p, 3);
     el.textContent = fmt(from + (to - from) * e);
     if (p < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
+  // rAF is paused in hidden/background tabs — guarantee the final value lands
+  setTimeout(() => { if (counters.get(el) === to) el.textContent = fmt(to); }, dur + 80);
 }
 
 function toast(msg, icon = "✅", variant = "") {
@@ -965,6 +982,140 @@ function renderJournal() {
     </div>`;
 }
 
+/* ---------- tasks (to-do list) ---------- */
+
+let taskAddPriority = 4;
+
+function dayName(n) {
+  const start = new Date(state.startDate + "T00:00:00");
+  return new Date(start.getTime() + (n - 1) * 86400000)
+    .toLocaleDateString(undefined, { weekday: "short" });
+}
+
+function taskRow(t) {
+  const today = todayDayNumber();
+  const overdue = !t.done && t.day != null && t.day < today;
+  const chip = t.day == null
+    ? `<span class="task-chip anytime">anytime</span>`
+    : t.day === today
+      ? `<span class="task-chip today">today</span>`
+      : `<span class="task-chip ${overdue ? "overdue" : ""}">${overdue ? "⚠ " : ""}Day ${t.day} · ${dayName(t.day)}</span>`;
+  return `<div class="task-row ${t.done ? "done" : ""}" data-task="${t.id}">
+    <button type="button" class="task-check p${t.priority}" title="${t.done ? "Mark as not done" : `Complete (+${TASK_XP[t.priority]} XP)`}">${t.done ? "✓" : ""}</button>
+    <span class="task-text">${esc(t.text)}</span>
+    ${chip}
+    <button type="button" class="task-flag-btn p${t.priority}" title="Priority P${t.priority} — click to change">⚑</button>
+    <button type="button" class="task-del" title="Delete task">✕</button>
+  </div>`;
+}
+
+function renderTasks() {
+  const today = todayDayNumber();
+  const open = state.tasks.filter(t => !t.done);
+  const done = state.tasks.filter(t => t.done);
+  const byPriority = (a, b) => a.priority - b.priority || a.createdAt - b.createdAt;
+
+  const overdue = open.filter(t => t.day != null && t.day < today).sort(byPriority);
+  const todays = open.filter(t => t.day === today).sort(byPriority);
+  const upcoming = open.filter(t => t.day != null && t.day > today).sort((a, b) => a.day - b.day || byPriority(a, b));
+  const anytime = open.filter(t => t.day == null).sort(byPriority);
+
+  const section = (title, arr, cls = "") => arr.length
+    ? `<div class="task-section ${cls}"><div class="task-section-title">${title} <span>${arr.length}</span></div>${arr.map(taskRow).join("")}</div>`
+    : "";
+
+  let html =
+    section("⚠ Overdue", overdue, "overdue-section") +
+    section("Today", todays) +
+    section("Upcoming", upcoming) +
+    section("Anytime", anytime);
+
+  if (!open.length && !done.length) {
+    html = `<div class="task-empty">🧘 Nothing here. Add your first task above —<br>P1 tasks pay <b>+15 XP</b>, so hunt the big ones.</div>`;
+  } else if (!open.length) {
+    html = `<div class="task-empty">🎉 All clear. Every task is done.</div>`;
+  }
+
+  if (done.length) {
+    html += `<details class="task-done-details"${done.length <= 4 ? " open" : ""}>
+      <summary>Completed · ${done.length} (+${done.reduce((s, t) => s + (TASK_XP[t.priority] || 5), 0)} XP)</summary>
+      ${done.sort((a, b) => (b.doneDay || 0) - (a.doneDay || 0)).map(taskRow).join("")}
+    </details>`;
+  }
+
+  $("#task-sections").innerHTML = html;
+  $("#task-count").textContent = `${done.length}/${state.tasks.length} done`;
+
+  // day selector options (rebuild — labels show weekday names)
+  const sel = $("#task-day");
+  const current = sel.value;
+  sel.innerHTML =
+    `<option value="today">Today</option>` +
+    Array.from({ length: 7 }, (_, i) => `<option value="${i + 1}">Day ${i + 1} · ${dayName(i + 1)}</option>`).join("") +
+    `<option value="any">Anytime</option>`;
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+function addTaskFromInput() {
+  const input = $("#task-input");
+  let text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  // Todoist-style: a trailing/leading !1–!4 sets priority
+  const m = text.match(/(?:^|\s)!([1-4])(?=\s|$)/);
+  let priority = taskAddPriority;
+  if (m) { priority = Number(m[1]); text = text.replace(m[0], " ").replace(/\s+/g, " ").trim(); }
+  if (!text) { input.focus(); return; }
+  const dv = $("#task-day").value;
+  const day = dv === "any" ? null : dv === "today" ? todayDayNumber() : Number(dv);
+  state.tasks.push({
+    id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    text, priority, day, done: false, doneDay: null, createdAt: Date.now(),
+  });
+  input.value = "";
+  input.focus();
+  renderTasks();
+  save();
+}
+
+$("#task-add-btn").addEventListener("click", addTaskFromInput);
+$("#task-input").addEventListener("keydown", e => { if (e.key === "Enter") addTaskFromInput(); });
+
+$("#task-flags").addEventListener("click", e => {
+  const f = e.target.closest(".task-flag");
+  if (!f) return;
+  taskAddPriority = Number(f.dataset.p);
+  document.querySelectorAll("#task-flags .task-flag").forEach(b => b.classList.toggle("sel", b === f));
+  $("#task-input").focus();
+});
+
+$("#task-sections").addEventListener("click", e => {
+  const row = e.target.closest(".task-row");
+  if (!row) return;
+  const t = state.tasks.find(x => x.id === row.dataset.task);
+  if (!t) return;
+
+  if (e.target.closest(".task-check")) {
+    t.done = !t.done;
+    t.doneDay = t.done ? state.selectedDay : null;
+    if (t.done) {
+      floatXp(row, TASK_XP[t.priority] || 5);
+      FX.burstAt(e.target.closest(".task-check"), 12);
+    }
+    renderTasks();
+    updateAll({ fullHabits: false, metrics: false });
+  } else if (e.target.closest(".task-flag-btn")) {
+    t.priority = t.priority >= 4 ? 1 : t.priority + 1; // cycle P4→P1→P2→P3→P4
+    renderTasks();
+    if (t.done) updateAll({ fullHabits: false, metrics: false }); // done-task XP depends on priority
+    else save();
+  } else if (e.target.closest(".task-del")) {
+    state.tasks = state.tasks.filter(x => x.id !== t.id);
+    renderTasks();
+    if (t.done) updateAll({ fullHabits: false, metrics: false });
+    else save();
+  }
+});
+
 /* ---------- analytics ---------- */
 
 function renderAnalytics(week) {
@@ -1205,6 +1356,7 @@ function updateAll(opts = {}) {
 
   // re-render whichever heavy panel is open
   const active = document.querySelector(".section-tab.active")?.dataset.panel;
+  if (active === "panel-tasks") renderTasks();
   if (active === "panel-career") renderCareer();
   if (active === "panel-fitness") renderFitness();
   if (active === "panel-detox") renderDetox();
@@ -1253,6 +1405,7 @@ function switchPanel(panelId) {
   document.querySelectorAll(".section-tab").forEach(t => t.classList.toggle("active", t.dataset.panel === panelId));
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === panelId));
   const week = computeWeek();
+  if (panelId === "panel-tasks") { renderTasks(); $("#task-input").focus(); }
   if (panelId === "panel-analytics") renderAnalytics(week);
   if (panelId === "panel-career") renderCareer();
   if (panelId === "panel-fitness") renderFitness();
@@ -1360,6 +1513,8 @@ function exportCsv() {
   const metricKeys = Object.keys(emptyDay().metrics);
   for (const k of metricKeys) rows.push([k, ...state.days.map(d => d.metrics[k] ?? "")]);
   const week = computeWeek();
+  rows.push(["Tasks Done", ...Array.from({ length: 7 }, (_, i) => state.tasks.filter(t => t.done && t.doneDay === i + 1).length)]);
+  rows.push(["Task XP", ...week.days.map(d => d.taskXp)]);
   rows.push(["Day Score", ...week.days.map(d => d.score)]);
   rows.push(["Day %", ...week.days.map(d => d.pct + "%")]);
   rows.push(["Total XP", week.totalXp]);
@@ -1404,6 +1559,7 @@ document.addEventListener("keydown", e => {
   if (e.key >= "1" && e.key <= "7") switchDay(Number(e.key));
   else if (e.key === "t" || e.key === "T") $("#btn-theme").click();
   else if (e.key === "h" || e.key === "H") switchPanel("panel-today");
+  else if (e.key === "d" || e.key === "D") switchPanel("panel-tasks");
   else if (e.key === "a" || e.key === "A") switchPanel("panel-analytics");
   else if (e.key === "g" || e.key === "G") switchPanel("panel-achievements");
   else if (e.key === "r" || e.key === "R") { switchPanel("panel-report"); renderReport(); }
@@ -1434,6 +1590,7 @@ setInterval(tickClock, 1000);
 
 function renderEverything() {
   applyTheme();
+  renderTasks();
   renderJournal();
   renderCareer();
   renderFitness();
