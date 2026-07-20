@@ -142,7 +142,7 @@ function defaultState() {
     startDate: toISODate(new Date()),
     selectedDay: 1,
     theme: "dark",
-    meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {} },
+    meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {}, lastModified: 0 },
     days: Array.from({ length: WEEK_DAYS }, emptyDay),
   };
 }
@@ -152,23 +152,26 @@ function toISODate(d) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+// deep-merge a saved/remote snapshot onto defaults so new fields never break old data
+function normalizeState(saved) {
+  const base = defaultState();
+  const state = { ...base, ...saved, meta: { ...base.meta, ...(saved.meta || {}) } };
+  state.days = base.days.map((d, i) => {
+    const sd = (saved.days && saved.days[i]) || {};
+    return {
+      habits: { ...(sd.habits || {}) },
+      metrics: { ...d.metrics, ...(sd.metrics || {}) },
+      journal: { ...d.journal, ...(sd.journal || {}) },
+    };
+  });
+  return state;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
-    const saved = JSON.parse(raw);
-    const base = defaultState();
-    // deep-merge saved onto defaults so new fields never break old data
-    const state = { ...base, ...saved, meta: { ...base.meta, ...(saved.meta || {}) } };
-    state.days = base.days.map((d, i) => {
-      const sd = (saved.days && saved.days[i]) || {};
-      return {
-        habits: { ...(sd.habits || {}) },
-        metrics: { ...d.metrics, ...(sd.metrics || {}) },
-        journal: { ...d.journal, ...(sd.journal || {}) },
-      };
-    });
-    return state;
+    return normalizeState(JSON.parse(raw));
   } catch {
     return defaultState();
   }
@@ -176,10 +179,14 @@ function loadState() {
 
 let state = loadState();
 let saveTimer = null;
+let applyingRemote = false; // suppress lastModified bumps + sync pushes while applying cloud data
 function save() {
   clearTimeout(saveTimer);
+  const silent = applyingRemote;
+  if (!silent) state.meta.lastModified = Date.now();
   saveTimer = setTimeout(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (!silent) window.dispatchEvent(new CustomEvent("weekmaxxing:saved"));
   }, 150);
 }
 
@@ -1425,13 +1432,38 @@ setInterval(tickClock, 1000);
    Init
    ========================================================================== */
 
+function renderEverything() {
+  applyTheme();
+  renderJournal();
+  renderCareer();
+  renderFitness();
+  renderDetox();
+  updateAll();
+}
+
+/* Replace the whole state with a cloud snapshot (newer device wins upstream).
+   Runs "silently": no lastModified bump and no saved-event, so applying remote
+   data never triggers a push back — that would ping-pong between open devices. */
+function applyRemoteState(remote) {
+  applyingRemote = true;
+  try {
+    state = normalizeState(remote);
+    state.selectedDay = todayDayNumber();
+    renderEverything();
+  } finally {
+    // save() above is debounced; keep the flag up until it has fired
+    setTimeout(() => { applyingRemote = false; }, 400);
+  }
+}
+
+// bridge for js/sync.js (loaded as a module; this file is a classic script)
+window.WeekMaxxing = {
+  getState: () => state,
+  applyRemoteState,
+};
+
 state.selectedDay = Math.min(Math.max(state.selectedDay, 1), 7);
 // default the selected day to today on load
 state.selectedDay = todayDayNumber();
-applyTheme();
 tickClock();
-renderJournal();
-renderCareer();
-renderFitness();
-renderDetox();
-updateAll();
+renderEverything();
