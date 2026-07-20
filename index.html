@@ -123,6 +123,7 @@
   <nav class="section-tabs glass" id="section-tabs">
     <button class="section-tab active" data-panel="panel-today">Today</button>
     <button class="section-tab" data-panel="panel-tasks">Tasks</button>
+    <button class="section-tab" data-panel="panel-food">Food</button>
     <button class="section-tab" data-panel="panel-career">Career</button>
     <button class="section-tab" data-panel="panel-fitness">Fitness</button>
     <button class="section-tab" data-panel="panel-detox">Detox</button>
@@ -177,6 +178,32 @@
         <button type="button" class="btn-primary btn-sm" id="task-add-btn">Add</button>
       </div>
       <div id="task-sections"></div>
+    </div>
+  </section>
+
+  <!-- ============ FOOD PANEL ============ -->
+  <section class="panel" id="panel-food">
+    <div class="card glass">
+      <div class="card-header">
+        <h2>🍽 Food Journal</h2>
+        <span class="card-header-meta" id="food-count"></span>
+      </div>
+      <div class="macro-tiles" id="food-totals"></div>
+      <div class="food-add">
+        <select id="food-meal" title="Meal">
+          <option value="breakfast">🌅 Breakfast</option>
+          <option value="lunch">🌞 Lunch</option>
+          <option value="dinner">🌙 Dinner</option>
+          <option value="snack">🍪 Snack</option>
+        </select>
+        <input type="text" id="food-name" placeholder="What did you eat?" maxlength="80">
+        <input type="number" id="food-cal" placeholder="kcal" min="0" step="10">
+        <input type="number" id="food-protein" placeholder="protein g" min="0" step="1">
+        <input type="number" id="food-carbs" placeholder="carbs g" min="0" step="1">
+        <input type="number" id="food-fat" placeholder="fat g" min="0" step="1">
+        <button type="button" class="btn-primary btn-sm" id="food-add-btn">Add</button>
+      </div>
+      <div id="food-sections"></div>
     </div>
   </section>
 
@@ -291,6 +318,7 @@
       <tr><td><kbd>T</kbd></td><td>Toggle dark / light theme</td></tr>
       <tr><td><kbd>H</kbd></td><td>Go to Today panel</td></tr>
       <tr><td><kbd>D</kbd></td><td>Go to Tasks (to-do list)</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Go to Food Journal</td></tr>
       <tr><td><kbd>A</kbd></td><td>Go to Analytics</td></tr>
       <tr><td><kbd>G</kbd></td><td>Go to Achievements</td></tr>
       <tr><td><kbd>R</kbd></td><td>Generate Week Report</td></tr>

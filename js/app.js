@@ -95,8 +95,15 @@ const QUOTES = [
 const GOALS = {
   sleepHours: 8, workoutMin: 45, waterL: 3, proteinG: 100, calories: 2200,
   steps: 6000, walkMin: 30, deepWorkH: 3, pomodoros: 6, readMin: 30, pages: 20,
-  learnMin: 60, screenMin: 120, journalCount: 2,
+  learnMin: 60, screenMin: 120, journalCount: 2, carbsG: 250, fatG: 70,
 };
+
+const MEALS = [
+  { id: "breakfast", label: "Breakfast", icon: "🌅" },
+  { id: "lunch",     label: "Lunch",     icon: "🌞" },
+  { id: "dinner",    label: "Dinner",    icon: "🌙" },
+  { id: "snack",     label: "Snacks",    icon: "🍪" },
+];
 
 const ACHIEVEMENTS = [
   { id: "firstHabit",  name: "First Blood",       icon: "🩸", xp: 10,  desc: "Complete your first habit" },
@@ -131,7 +138,7 @@ function emptyDay() {
   return {
     habits: {},
     metrics: {
-      sleepHours: null, weight: null, proteinG: null, calories: null, waterL: null,
+      sleepHours: null, weight: null, proteinG: null, calories: null, carbsG: null, fatG: null, waterL: null,
       workoutMin: null, walkMin: null, steps: null, energy: 0, recovery: 0, mood: 0,
       deepWorkH: null, pomodoros: 0, playwrightMin: null, aiMin: null,
       freelanceMin: null, contentMin: null, applications: 0, resumeImp: 0, linkedinImp: 0, sideProjectMin: null,
@@ -139,6 +146,8 @@ function emptyDay() {
       bookTitle: "", pages: null, readMin: null, booksFinished: 0,
     },
     journal: { p1: "", p2: "", p3: "", mission: "", wins: "", lessons: "", gratitude: "" },
+    // {id, meal, name, calories, protein, carbs, fat, createdAt}
+    food: [],
   };
 }
 
@@ -169,6 +178,7 @@ function normalizeState(saved) {
       habits: { ...(sd.habits || {}) },
       metrics: { ...d.metrics, ...(sd.metrics || {}) },
       journal: { ...d.journal, ...(sd.journal || {}) },
+      food: Array.isArray(sd.food) ? sd.food : [],
     };
   });
   state.tasks = Array.isArray(saved.tasks) ? saved.tasks : [];
@@ -777,7 +787,7 @@ function renderMetricCards() {
   const cards = [
     metricCard({ icon: "😴", title: "Sleep", value: m.sleepHours ?? "–", unit: "h", pct: m.sleepHours ? m.sleepHours / GOALS.sleepHours * 100 : 0, color: "var(--violet)", sub: `goal ${GOALS.sleepHours}h`, input: quickInput("sleepHours", 0.5, "hours") }),
     metricCard({ icon: "🏋️", title: "Workout", value: m.workoutMin ?? "–", unit: "min", pct: m.workoutMin ? m.workoutMin / GOALS.workoutMin * 100 : 0, color: "var(--blue)", sub: `goal ${GOALS.workoutMin} min`, input: quickInput("workoutMin", 5, "min") }),
-    metricCard({ icon: "🍗", title: "Nutrition", value: m.proteinG ?? "–", unit: "g protein", pct: m.proteinG ? m.proteinG / GOALS.proteinG * 100 : 0, color: "var(--green)", sub: `${m.calories ?? "–"} kcal · goal ${GOALS.proteinG}g`, input: quickInput("proteinG", 5, "grams") }),
+    metricCard({ icon: "🍗", title: "Nutrition", value: m.proteinG ?? "–", unit: "g protein", pct: m.proteinG ? m.proteinG / GOALS.proteinG * 100 : 0, color: "var(--green)", sub: `${m.calories ?? "–"} kcal${m.carbsG != null ? ` · ${m.carbsG}g C · ${m.fatG}g F` : ""}`, input: quickInput("proteinG", 5, "grams") }),
     metricCard({ icon: "💼", title: "Career", value: m.deepWorkH ?? "–", unit: "h deep", pct: m.deepWorkH ? m.deepWorkH / GOALS.deepWorkH * 100 : 0, color: "var(--blue)", sub: `${m.pomodoros || 0} pomodoros · ${m.applications || 0} apps`, input: quickInput("deepWorkH", 0.5, "hours") }),
     metricCard({ icon: "🤖", title: "Learning", value: learnMin || "–", unit: "min", pct: learnMin / GOALS.learnMin * 100, color: "var(--violet)", sub: `AI ${m.aiMin || 0} · QA ${m.playwrightMin || 0} min` }),
     metricCard({ icon: "📖", title: "Reading", value: m.readMin ?? "–", unit: "min", pct: m.readMin ? m.readMin / GOALS.readMin * 100 : 0, color: "var(--gold)", sub: `${m.pages || 0} pages`, input: quickInput("readMin", 5, "min") }),
@@ -895,6 +905,102 @@ function avgOf(arr) {
   const v = arr.filter(x => x);
   return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : 0;
 }
+
+/* ---------- food journal ---------- */
+
+// the food log is the source of truth for calories/macros once you log anything —
+// this keeps achievements/reports (which read metrics.proteinG etc.) in sync
+// without forcing every day to use the journal
+function recomputeFoodMetrics(dayIndex) {
+  const day = state.days[dayIndex];
+  if (!day.food.length) return;
+  const sum = key => day.food.reduce((s, f) => s + (Number(f[key]) || 0), 0);
+  day.metrics.calories = Math.round(sum("calories"));
+  day.metrics.proteinG = Math.round(sum("protein"));
+  day.metrics.carbsG = Math.round(sum("carbs"));
+  day.metrics.fatG = Math.round(sum("fat"));
+}
+
+function foodRow(f) {
+  return `<div class="food-row" data-food="${f.id}">
+    <span class="food-name">${esc(f.name)}</span>
+    <span class="food-macros"><b>${f.calories}</b> kcal <i>·</i> P ${f.protein}g <i>·</i> C ${f.carbs}g <i>·</i> F ${f.fat}g</span>
+    <button type="button" class="food-del" title="Delete entry">✕</button>
+  </div>`;
+}
+
+function macroTile(label, val, goal, unit, color) {
+  const pct = goal ? Math.min((val / goal) * 100, 100) : 0;
+  return `<div class="macro-tile">
+    <div class="macro-tile-label">${label}</div>
+    <div class="macro-tile-value">${Math.round(val)}<small>${unit} / ${goal}${unit}</small></div>
+    <div class="macro-tile-bar"><i style="width:${pct}%;background:${color}"></i></div>
+  </div>`;
+}
+
+function renderFood() {
+  const day = selDay();
+  const totals = {
+    calories: day.food.reduce((s, f) => s + (Number(f.calories) || 0), 0),
+    protein: day.food.reduce((s, f) => s + (Number(f.protein) || 0), 0),
+    carbs: day.food.reduce((s, f) => s + (Number(f.carbs) || 0), 0),
+    fat: day.food.reduce((s, f) => s + (Number(f.fat) || 0), 0),
+  };
+  $("#food-totals").innerHTML =
+    macroTile("Calories", totals.calories, GOALS.calories, "kcal", "var(--gold)") +
+    macroTile("Protein", totals.protein, GOALS.proteinG, "g", "var(--green)") +
+    macroTile("Carbs", totals.carbs, GOALS.carbsG, "g", "var(--chart-blue)") +
+    macroTile("Fat", totals.fat, GOALS.fatG, "g", "var(--violet)");
+
+  const sections = MEALS.map(md => {
+    const items = day.food.filter(f => f.meal === md.id);
+    if (!items.length) return "";
+    const mealCals = items.reduce((s, f) => s + (Number(f.calories) || 0), 0);
+    return `<div class="food-section">
+      <div class="food-section-title">${md.icon} ${md.label} <span>${mealCals} kcal</span></div>
+      ${items.map(foodRow).join("")}
+    </div>`;
+  }).join("");
+
+  $("#food-sections").innerHTML = sections ||
+    `<div class="task-empty">🍽️ Nothing logged yet for this day.<br>Add each meal as you go — totals update instantly.</div>`;
+  $("#food-count").textContent = day.food.length ? `${day.food.length} item${day.food.length === 1 ? "" : "s"} logged` : "";
+}
+
+function addFoodEntry() {
+  const nameInput = $("#food-name");
+  const name = nameInput.value.trim();
+  if (!name) { nameInput.focus(); return; }
+  const cal = Number($("#food-cal").value) || 0;
+  const protein = Number($("#food-protein").value) || 0;
+  const carbs = Number($("#food-carbs").value) || 0;
+  const fat = Number($("#food-fat").value) || 0;
+  selDay().food.push({
+    id: "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    meal: $("#food-meal").value, name, calories: cal, protein, carbs, fat, createdAt: Date.now(),
+  });
+  recomputeFoodMetrics(state.selectedDay - 1);
+  nameInput.value = ""; $("#food-cal").value = ""; $("#food-protein").value = ""; $("#food-carbs").value = ""; $("#food-fat").value = "";
+  nameInput.focus();
+  renderFood();
+  renderMetricCards();
+  updateAll({ fullHabits: false, metrics: false });
+}
+
+$("#food-add-btn").addEventListener("click", addFoodEntry);
+["food-name", "food-cal", "food-protein", "food-carbs", "food-fat"].forEach(id => {
+  $("#" + id).addEventListener("keydown", e => { if (e.key === "Enter") addFoodEntry(); });
+});
+
+$("#food-sections").addEventListener("click", e => {
+  const row = e.target.closest(".food-row");
+  if (!row || !e.target.closest(".food-del")) return;
+  selDay().food = selDay().food.filter(f => f.id !== row.dataset.food);
+  recomputeFoodMetrics(state.selectedDay - 1);
+  renderFood();
+  renderMetricCards();
+  updateAll({ fullHabits: false, metrics: false });
+});
 
 /* ---------- detox + reading ---------- */
 
@@ -1357,6 +1463,7 @@ function updateAll(opts = {}) {
   // re-render whichever heavy panel is open
   const active = document.querySelector(".section-tab.active")?.dataset.panel;
   if (active === "panel-tasks") renderTasks();
+  if (active === "panel-food") renderFood();
   if (active === "panel-career") renderCareer();
   if (active === "panel-fitness") renderFitness();
   if (active === "panel-detox") renderDetox();
@@ -1398,6 +1505,7 @@ function switchDay(n) {
   renderCareer();
   renderFitness();
   renderDetox();
+  renderFood();
   updateAll({ fullHabits: false, metrics: false });
 }
 
@@ -1406,6 +1514,7 @@ function switchPanel(panelId) {
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === panelId));
   const week = computeWeek();
   if (panelId === "panel-tasks") { renderTasks(); $("#task-input").focus(); }
+  if (panelId === "panel-food") { renderFood(); $("#food-name").focus(); }
   if (panelId === "panel-analytics") renderAnalytics(week);
   if (panelId === "panel-career") renderCareer();
   if (panelId === "panel-fitness") renderFitness();
@@ -1512,6 +1621,7 @@ function exportCsv() {
   for (const h of HABITS) rows.push([h.label, ...state.days.map(d => d.habits[h.id] ? "YES" : "no")]);
   const metricKeys = Object.keys(emptyDay().metrics);
   for (const k of metricKeys) rows.push([k, ...state.days.map(d => d.metrics[k] ?? "")]);
+  rows.push(["Food Log", ...state.days.map(d => d.food.map(f => `${f.name} (${f.calories}kcal, P${f.protein}/C${f.carbs}/F${f.fat})`).join("; "))]);
   const week = computeWeek();
   rows.push(["Tasks Done", ...Array.from({ length: 7 }, (_, i) => state.tasks.filter(t => t.done && t.doneDay === i + 1).length)]);
   rows.push(["Task XP", ...week.days.map(d => d.taskXp)]);
@@ -1560,6 +1670,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "t" || e.key === "T") $("#btn-theme").click();
   else if (e.key === "h" || e.key === "H") switchPanel("panel-today");
   else if (e.key === "d" || e.key === "D") switchPanel("panel-tasks");
+  else if (e.key === "f" || e.key === "F") switchPanel("panel-food");
   else if (e.key === "a" || e.key === "A") switchPanel("panel-analytics");
   else if (e.key === "g" || e.key === "G") switchPanel("panel-achievements");
   else if (e.key === "r" || e.key === "R") { switchPanel("panel-report"); renderReport(); }
@@ -1595,6 +1706,7 @@ function renderEverything() {
   renderCareer();
   renderFitness();
   renderDetox();
+  renderFood();
   updateAll();
 }
 
