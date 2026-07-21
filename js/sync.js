@@ -16,7 +16,7 @@ import {
   onAuthStateChanged, signOut,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
-  initializeFirestore, persistentLocalCache, doc, onSnapshot, setDoc, serverTimestamp,
+  getFirestore, doc, onSnapshot, setDoc, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -30,7 +30,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = initializeFirestore(app, { localCache: persistentLocalCache() });
+// memory-only cache on purpose: localStorage (via app.js) is already the offline
+// layer. Firestore's own persistent disk cache would let onSnapshot fire first
+// with a stale prior-session snapshot before the real server state arrives —
+// exactly the race that let one device's push clobber another's.
+const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
 const dot = document.getElementById("sync-dot");
@@ -117,6 +121,9 @@ onAuthStateChanged(auth, (user) => {
   setStatus("syncing");
   unsubscribe = onSnapshot(userDoc(user), (snap) => {
     if (snap.metadata.hasPendingWrites) return; // our own write echoing back
+    // never act on a snapshot that isn't confirmed by the server — a cache-only
+    // read can be stale and must not be allowed to decide an overwrite
+    if (snap.metadata.fromCache) return;
     if (!snap.exists()) { pushNow(); return; }  // first sign-in: upload local progress
 
     let remote;
