@@ -153,7 +153,7 @@ function emptyDay() {
 
 function defaultState() {
   return {
-    startDate: toISODate(new Date()),
+    startDate: toISODate(mondayOf(new Date())),
     selectedDay: 1,
     theme: "dark",
     meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {}, lastModified: 0 },
@@ -166,6 +166,15 @@ function defaultState() {
 function toISODate(d) {
   const p = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// the Monday (00:00 local) of the calendar week containing `date` — Day 1 is always Monday
+function mondayOf(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const dow = d.getDay(); // 0 = Sunday .. 6 = Saturday
+  d.setDate(d.getDate() + ((dow === 0 ? -6 : 1) - dow));
+  return d;
 }
 
 // deep-merge a saved/remote snapshot onto defaults so new fields never break old data
@@ -185,11 +194,46 @@ function normalizeState(saved) {
   return state;
 }
 
+// one-time repair for weeks created before Day 1 was pinned to Monday: shifts
+// existing per-day data (and task/celebration day references) so it lands on
+// the correct weekday instead of losing whichever days preceded the old start
+function alignToMonday(state) {
+  if (state.meta.weekAligned) return state;
+  const stored = new Date(state.startDate + "T00:00:00");
+  const monday = mondayOf(stored);
+  const offset = Math.round((stored.getTime() - monday.getTime()) / 86400000);
+
+  state.meta.weekAligned = true;
+  state.startDate = toISODate(monday);
+  if (offset <= 0) return state;
+
+  state.days = Array.from({ length: WEEK_DAYS }, (_, i) => {
+    const src = i - offset;
+    return src >= 0 && src < state.days.length ? state.days[src] : emptyDay();
+  });
+
+  const oldCelebrated = state.meta.celebratedPerfect || {};
+  const newCelebrated = {};
+  for (const [k, v] of Object.entries(oldCelebrated)) {
+    const nk = Number(k) + offset;
+    if (nk >= 1 && nk <= WEEK_DAYS) newCelebrated[nk] = v;
+  }
+  state.meta.celebratedPerfect = newCelebrated;
+
+  state.tasks = (state.tasks || []).map(t => {
+    if (t.day == null) return t;
+    const nd = t.day + offset;
+    return { ...t, day: nd >= 1 && nd <= WEEK_DAYS ? nd : null };
+  });
+
+  return state;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
-    return normalizeState(JSON.parse(raw));
+    return alignToMonday(normalizeState(JSON.parse(raw)));
   } catch {
     return defaultState();
   }
@@ -1716,7 +1760,7 @@ function renderEverything() {
 function applyRemoteState(remote) {
   applyingRemote = true;
   try {
-    state = normalizeState(remote);
+    state = alignToMonday(normalizeState(remote));
     state.selectedDay = todayDayNumber();
     renderEverything();
   } finally {
