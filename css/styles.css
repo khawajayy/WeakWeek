@@ -824,9 +824,9 @@ body::before {
 /* ==========================================================================
    Notes (week-wide scratchpad)
    ========================================================================== */
-.note-add { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 18px; }
+.note-add { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
 .note-add textarea {
-  flex: 1;
+  flex: 1 1 200px; min-width: 160px;
   font-family: var(--font);
   background: var(--surface-2);
   border: 1px solid var(--border);
