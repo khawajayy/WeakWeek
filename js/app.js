@@ -137,6 +137,7 @@ const ACHIEVEMENTS = [
 function emptyDay() {
   return {
     habits: {},
+    cheatDay: false,
     metrics: {
       sleepHours: null, weight: null, proteinG: null, calories: null, carbsG: null, fatG: null, fiberG: null, waterL: null,
       workoutMin: null, walkMin: null, steps: null, energy: 0, recovery: 0, mood: 0,
@@ -187,6 +188,7 @@ function normalizeState(saved) {
     const sd = (saved.days && saved.days[i]) || {};
     return {
       habits: { ...(sd.habits || {}) },
+      cheatDay: !!sd.cheatDay,
       metrics: { ...d.metrics, ...(sd.metrics || {}) },
       journal: { ...d.journal, ...(sd.journal || {}) },
       food: Array.isArray(sd.food) ? sd.food : [],
@@ -268,6 +270,9 @@ function todayDayNumber() {
 function isFutureDay(n) { return n > todayDayNumber(); }
 function isPastOrToday(n) { return n <= todayDayNumber(); }
 
+const CHEAT_DAY_GROUP = "Nutrition Discipline";
+function cheatDaySuspends(h, day) { return day.cheatDay && h.group === CHEAT_DAY_GROUP; }
+
 function dayPenalties(n) {
   const day = state.days[n - 1];
   const out = [];
@@ -275,6 +280,7 @@ function dayPenalties(n) {
   const isToday = n === todayDayNumber();
   for (const h of habitsForDay(n)) {
     if (!h.penalty) continue;
+    if (cheatDaySuspends(h, day)) continue; // cheat day: no XP hit for sugar/junk/fast-food/Mountain Dew
     // discipline penalties land once the day is over (or live if metrics prove it)
     if (!day.habits[h.id] && !isToday) {
       out.push({ label: `${h.label} missed`, xp: h.penalty, icon: "⛔" });
@@ -741,6 +747,7 @@ function renderDayTabs(week) {
     const isToday = d.n === week.today;
     return `<button class="day-tab ${d.n === state.selectedDay ? "active" : ""} ${isFutureDay(d.n) ? "future" : ""}" data-day="${d.n}">
       ${isToday ? '<span class="dt-today-dot"></span>' : ""}
+      ${state.days[d.n - 1].cheatDay ? '<span class="dt-cheat-badge" title="Cheat Day">🎉</span>' : ""}
       <span class="dt-day">Day ${d.n}</span>
       <span class="dt-date">${lbl}</span>
       <span class="dt-pct"><i style="width:${d.pct}%"></i></span>
@@ -769,7 +776,7 @@ function renderHabits(week) {
         ${dayHabits.filter(h => h.group === g).map(h => {
           const autoTracked = h.id === "protein100" && day.food.length > 0;
           return `
-          <label class="habit ${day.habits[h.id] ? "checked" : ""} ${autoTracked ? "auto-tracked" : ""} ${h.penalty && !day.habits[h.id] && isPastOrToday(state.selectedDay) ? "penalty-live" : ""}" data-habit="${h.id}" ${autoTracked ? `title="Auto-tracked from your Food Journal (${day.metrics.proteinG || 0}g logged)"` : ""}>
+          <label class="habit ${day.habits[h.id] ? "checked" : ""} ${autoTracked ? "auto-tracked" : ""} ${h.penalty && !day.habits[h.id] && isPastOrToday(state.selectedDay) && !cheatDaySuspends(h, day) ? "penalty-live" : ""}" data-habit="${h.id}" ${autoTracked ? `title="Auto-tracked from your Food Journal (${day.metrics.proteinG || 0}g logged)"` : ""}>
             <input type="checkbox" ${day.habits[h.id] ? "checked" : ""}>
             <span class="hb-box">✓</span>
             <span class="hb-label">${h.label}${autoTracked ? ' <span class="hb-auto">🍽 auto</span>' : ""}</span>
@@ -782,16 +789,40 @@ function renderHabits(week) {
   $("#habit-progress-fill").style.width = d.pct + "%";
 }
 
+function renderCheatToggle() {
+  const on = !!selDay().cheatDay;
+  $("#cheat-day-switch").classList.toggle("on", on);
+  $("#cheat-day-switch").setAttribute("aria-checked", String(on));
+  $("#cheat-day-toggle").classList.toggle("on", on);
+}
+
+$("#cheat-day-switch").addEventListener("click", () => {
+  const day = selDay();
+  day.cheatDay = !day.cheatDay;
+  renderCheatToggle();
+  toast(
+    day.cheatDay ? "Cheat Day activated — sugar/junk/fast-food/Mountain Dew penalties paused today" : "Cheat Day turned off — penalties back on",
+    day.cheatDay ? "🎉" : "✅",
+    day.cheatDay ? "toast-gold" : ""
+  );
+  updateAll();
+});
+
 function renderWarnings(week) {
   const d = week.days[state.selectedDay - 1];
   const day = selDay();
   let html = "";
+  if (day.cheatDay) {
+    html += `<div class="warning-banner" style="border-color:rgba(232,179,57,.5);background:rgba(232,179,57,.08)">
+      <span class="wb-icon">🎉</span>Cheat Day active — Mountain Dew, Sugar, Junk Food, and Fast Food penalties are paused today.
+      <span class="wb-xp" style="color:var(--gold)">no penalty</span></div>`;
+  }
   if (day.metrics.screenMin != null && day.metrics.screenMin > SCREEN_LIMIT_MIN) {
     html += `<div class="warning-banner"><span class="wb-icon">📱</span>
       Screen time is ${day.metrics.screenMin} min — over the ${SCREEN_LIMIT_MIN} min limit.
       <span class="wb-xp">−${SCREEN_PENALTY} XP</span></div>`;
   }
-  if (!day.habits.noDew && isPastOrToday(state.selectedDay)) {
+  if (!day.habits.noDew && isPastOrToday(state.selectedDay) && !day.cheatDay) {
     html += `<div class="warning-banner warn-soft"><span class="wb-icon">🥤</span>
       Mountain Dew alert — "No Mountain Dew" isn't checked. Stay strong.
       <span class="wb-xp">${state.selectedDay < week.today ? "−15 XP" : "at risk"}</span></div>`;
@@ -1605,6 +1636,7 @@ function updateAll(opts = {}) {
   $("#habit-progress-fill").style.width = finalWeek.days[state.selectedDay - 1].pct + "%";
 
   if (opts.fullHabits !== false) renderHabits(finalWeek);
+  renderCheatToggle();
   if (opts.metrics !== false) renderMetricCards();
 
   // re-render whichever heavy panel is open
@@ -1647,6 +1679,7 @@ function updateAll(opts = {}) {
 function switchDay(n) {
   state.selectedDay = n;
   renderHabits(computeWeek());
+  renderCheatToggle();
   renderMetricCards();
   renderJournal();
   renderCareer();
@@ -1773,6 +1806,7 @@ $("#btn-theme").addEventListener("click", () => {
 function exportCsv() {
   const rows = [["Field", ...Array.from({ length: 7 }, (_, i) => `Day ${i + 1}`)]];
   for (const h of HABITS) rows.push([h.label, ...state.days.map(d => d.habits[h.id] ? "YES" : "no")]);
+  rows.push(["Cheat Day", ...state.days.map(d => d.cheatDay ? "YES" : "no")]);
   const metricKeys = Object.keys(emptyDay().metrics);
   for (const k of metricKeys) rows.push([k, ...state.days.map(d => d.metrics[k] ?? "")]);
   rows.push(["Food Log", ...state.days.map(d => d.food.map(f => `${f.name} (${f.calories}kcal, P${f.protein}/C${f.carbs}/F${f.fat})`).join("; "))]);

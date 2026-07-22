@@ -145,7 +145,13 @@
         <div class="card glass">
           <div class="card-header">
             <h2>⚡ Daily Habits</h2>
-            <span class="card-header-meta" id="habit-count">0/22</span>
+            <div class="card-header-right">
+              <div class="cheat-day-toggle" id="cheat-day-toggle" title="Pauses Mountain Dew / Sugar / Junk Food / Fast Food penalties for this day only">
+                <span class="cheat-day-label">🎉 Cheat Day</span>
+                <button type="button" class="toggle-switch" id="cheat-day-switch" role="switch" aria-checked="false"><span class="toggle-knob"></span></button>
+              </div>
+              <span class="card-header-meta" id="habit-count">0/22</span>
+            </div>
           </div>
           <div class="habit-progress"><div class="habit-progress-fill" id="habit-progress-fill"></div></div>
           <div class="habit-groups" id="habit-list"></div>
