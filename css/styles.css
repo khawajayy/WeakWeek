@@ -822,6 +822,62 @@ body::before {
 .food-del:hover { background: var(--surface-3); color: var(--red); transform: scale(1.1); }
 
 /* ==========================================================================
+   Notes (week-wide scratchpad)
+   ========================================================================== */
+.note-add { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 18px; }
+.note-add textarea {
+  flex: 1;
+  font-family: var(--font);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 10px 12px; font-size: 13px;
+  resize: vertical; min-height: 42px;
+  transition: border-color var(--speed) var(--ease), box-shadow var(--speed) var(--ease);
+}
+.note-add textarea:focus {
+  outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(57,135,229,.18);
+}
+
+#notes-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;
+}
+.note-card {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  transition: all var(--speed) var(--ease);
+  animation: fadeSlide .25s var(--ease);
+}
+.note-card:hover { border-color: var(--border-strong); }
+.note-card.pinned { border-color: rgba(232,179,57,.5); background: rgba(232,179,57,.06); }
+.note-card-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.note-time { font-size: 10px; color: var(--text-3); font-weight: 600; }
+.note-pin-btn, .note-del {
+  margin-left: auto;
+  width: 24px; height: 24px; flex: none;
+  border: none; border-radius: 7px;
+  background: transparent; color: var(--text-3);
+  font-size: 12px; cursor: pointer; opacity: .55;
+  transition: all var(--speed) var(--ease);
+}
+.note-pin-btn:hover, .note-del:hover { background: var(--surface-3); opacity: 1; transform: scale(1.1); }
+.note-del:hover { color: var(--red); }
+.note-pin-btn + .note-del { margin-left: 2px; }
+.note-text {
+  width: 100%;
+  font-family: var(--font);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px; line-height: 1.5;
+  padding: 0; resize: none; overflow: hidden;
+}
+.note-text:focus { outline: none; }
+
+/* ==========================================================================
    Analytics
    ========================================================================== */
 .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

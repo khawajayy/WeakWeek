@@ -160,6 +160,8 @@ function defaultState() {
     days: Array.from({ length: WEEK_DAYS }, emptyDay),
     // {id, text, priority 1-4, day 1-7|null (null = anytime), done, doneDay, createdAt}
     tasks: [],
+    // {id, text, pinned, createdAt, updatedAt} — week-wide scratchpad, not tied to a day
+    notes: [],
   };
 }
 
@@ -191,6 +193,7 @@ function normalizeState(saved) {
     };
   });
   state.tasks = Array.isArray(saved.tasks) ? saved.tasks : [];
+  state.notes = Array.isArray(saved.notes) ? saved.notes : [];
   return state;
 }
 
@@ -1132,6 +1135,86 @@ function renderJournal() {
     </div>`;
 }
 
+/* ---------- notes (week-wide scratchpad) ---------- */
+
+function relativeTime(ts) {
+  const min = Math.floor((Date.now() - ts) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function noteCard(n) {
+  return `<div class="note-card ${n.pinned ? "pinned" : ""}" data-note="${n.id}">
+    <div class="note-card-head">
+      <span class="note-time">${n.pinned ? "📌 " : ""}${relativeTime(n.updatedAt || n.createdAt)}</span>
+      <button type="button" class="note-pin-btn" title="${n.pinned ? "Unpin" : "Pin to top"}">${n.pinned ? "📌" : "📍"}</button>
+      <button type="button" class="note-del" title="Delete note">✕</button>
+    </div>
+    <textarea class="note-text" data-note-text rows="2" maxlength="2000" placeholder="Empty note…">${esc(n.text)}</textarea>
+  </div>`;
+}
+
+function renderNotes() {
+  const notes = [...state.notes].sort((a, b) => (b.pinned - a.pinned) || (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  $("#notes-list").innerHTML = notes.length
+    ? notes.map(noteCard).join("")
+    : `<div class="task-empty">🗒 Nothing jotted down yet.<br>Ideas, reminders, anything worth remembering this week goes here.</div>`;
+  $("#notes-count").textContent = state.notes.length ? `${state.notes.length} note${state.notes.length === 1 ? "" : "s"}` : "";
+  autoGrowAll(document.querySelectorAll("#notes-list .note-text"));
+}
+
+function autoGrow(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+function autoGrowAll(els) { els.forEach(autoGrow); }
+
+function addNote() {
+  const input = $("#note-input");
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  const now = Date.now();
+  state.notes.push({ id: "n" + now.toString(36) + Math.random().toString(36).slice(2, 6), text, pinned: false, createdAt: now, updatedAt: now });
+  input.value = "";
+  autoGrow(input);
+  renderNotes();
+  save();
+}
+
+$("#note-add-btn").addEventListener("click", addNote);
+$("#note-input").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) addNote(); });
+$("#note-input").addEventListener("input", () => autoGrow($("#note-input")));
+
+$("#notes-list").addEventListener("click", e => {
+  const card = e.target.closest(".note-card");
+  if (!card) return;
+  const n = state.notes.find(x => x.id === card.dataset.note);
+  if (!n) return;
+  if (e.target.closest(".note-pin-btn")) {
+    n.pinned = !n.pinned;
+    renderNotes();
+    save();
+  } else if (e.target.closest(".note-del")) {
+    state.notes = state.notes.filter(x => x.id !== n.id);
+    renderNotes();
+    save();
+  }
+});
+
+$("#notes-list").addEventListener("input", e => {
+  const ta = e.target.closest(".note-text");
+  if (!ta) return;
+  autoGrow(ta);
+  const card = ta.closest(".note-card");
+  const n = state.notes.find(x => x.id === card.dataset.note);
+  if (!n) return;
+  n.text = ta.value;
+  n.updatedAt = Date.now();
+  save();
+});
+
 /* ---------- tasks (to-do list) ---------- */
 
 let taskAddPriority = 4;
@@ -1564,6 +1647,7 @@ function switchPanel(panelId) {
   if (panelId === "panel-fitness") renderFitness();
   if (panelId === "panel-detox") renderDetox();
   if (panelId === "panel-journal") renderJournal();
+  if (panelId === "panel-notes") { renderNotes(); $("#note-input").focus(); }
 }
 
 /* ==========================================================================
@@ -1666,6 +1750,7 @@ function exportCsv() {
   const metricKeys = Object.keys(emptyDay().metrics);
   for (const k of metricKeys) rows.push([k, ...state.days.map(d => d.metrics[k] ?? "")]);
   rows.push(["Food Log", ...state.days.map(d => d.food.map(f => `${f.name} (${f.calories}kcal, P${f.protein}/C${f.carbs}/F${f.fat})`).join("; "))]);
+  rows.push(["Notes", state.notes.map(n => n.text.replace(/\n/g, " ")).join(" | ")]);
   const week = computeWeek();
   rows.push(["Tasks Done", ...Array.from({ length: 7 }, (_, i) => state.tasks.filter(t => t.done && t.doneDay === i + 1).length)]);
   rows.push(["Task XP", ...week.days.map(d => d.taskXp)]);
@@ -1715,6 +1800,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "h" || e.key === "H") switchPanel("panel-today");
   else if (e.key === "d" || e.key === "D") switchPanel("panel-tasks");
   else if (e.key === "f" || e.key === "F") switchPanel("panel-food");
+  else if (e.key === "n" || e.key === "N") switchPanel("panel-notes");
   else if (e.key === "a" || e.key === "A") switchPanel("panel-analytics");
   else if (e.key === "g" || e.key === "G") switchPanel("panel-achievements");
   else if (e.key === "r" || e.key === "R") { switchPanel("panel-report"); renderReport(); }
@@ -1747,6 +1833,7 @@ function renderEverything() {
   applyTheme();
   renderTasks();
   renderJournal();
+  renderNotes();
   renderCareer();
   renderFitness();
   renderDetox();
