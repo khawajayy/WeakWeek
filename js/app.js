@@ -95,7 +95,7 @@ const QUOTES = [
 const GOALS = {
   sleepHours: 8, workoutMin: 45, waterL: 3, proteinG: 100, calories: 2200,
   steps: 6000, walkMin: 30, deepWorkH: 3, pomodoros: 6, readMin: 30, pages: 20,
-  learnMin: 60, screenMin: 120, journalCount: 2, carbsG: 250, fatG: 70,
+  learnMin: 60, screenMin: 120, journalCount: 2, carbsG: 250, fatG: 70, fiberG: 30,
 };
 
 const MEALS = [
@@ -138,7 +138,7 @@ function emptyDay() {
   return {
     habits: {},
     metrics: {
-      sleepHours: null, weight: null, proteinG: null, calories: null, carbsG: null, fatG: null, waterL: null,
+      sleepHours: null, weight: null, proteinG: null, calories: null, carbsG: null, fatG: null, fiberG: null, waterL: null,
       workoutMin: null, walkMin: null, steps: null, energy: 0, recovery: 0, mood: 0,
       deepWorkH: null, pomodoros: 0, playwrightMin: null, aiMin: null,
       freelanceMin: null, contentMin: null, applications: 0, resumeImp: 0, linkedinImp: 0, sideProjectMin: null,
@@ -766,13 +766,16 @@ function renderHabits(week) {
     <div>
       <div class="habit-group-title">${g}</div>
       <div class="habit-items">
-        ${dayHabits.filter(h => h.group === g).map(h => `
-          <label class="habit ${day.habits[h.id] ? "checked" : ""} ${h.penalty && !day.habits[h.id] && isPastOrToday(state.selectedDay) ? "penalty-live" : ""}" data-habit="${h.id}">
+        ${dayHabits.filter(h => h.group === g).map(h => {
+          const autoTracked = h.id === "protein100" && day.food.length > 0;
+          return `
+          <label class="habit ${day.habits[h.id] ? "checked" : ""} ${autoTracked ? "auto-tracked" : ""} ${h.penalty && !day.habits[h.id] && isPastOrToday(state.selectedDay) ? "penalty-live" : ""}" data-habit="${h.id}" ${autoTracked ? `title="Auto-tracked from your Food Journal (${day.metrics.proteinG || 0}g logged)"` : ""}>
             <input type="checkbox" ${day.habits[h.id] ? "checked" : ""}>
             <span class="hb-box">✓</span>
-            <span class="hb-label">${h.label}</span>
+            <span class="hb-label">${h.label}${autoTracked ? ' <span class="hb-auto">🍽 auto</span>' : ""}</span>
             <span class="hb-xp">+${h.xp}</span>
-          </label>`).join("")}
+          </label>`;
+        }).join("")}
       </div>
     </div>`).join("");
   $("#habit-count").textContent = `${d.habitsDone}/${d.habitsTotal} · ${d.earned} XP earned`;
@@ -834,7 +837,7 @@ function renderMetricCards() {
   const cards = [
     metricCard({ icon: "😴", title: "Sleep", value: m.sleepHours ?? "–", unit: "h", pct: m.sleepHours ? m.sleepHours / GOALS.sleepHours * 100 : 0, color: "var(--violet)", sub: `goal ${GOALS.sleepHours}h`, input: quickInput("sleepHours", 0.5, "hours") }),
     metricCard({ icon: "🏋️", title: "Workout", value: m.workoutMin ?? "–", unit: "min", pct: m.workoutMin ? m.workoutMin / GOALS.workoutMin * 100 : 0, color: "var(--blue)", sub: `goal ${GOALS.workoutMin} min`, input: quickInput("workoutMin", 5, "min") }),
-    metricCard({ icon: "🍗", title: "Nutrition", value: m.proteinG ?? "–", unit: "g protein", pct: m.proteinG ? m.proteinG / GOALS.proteinG * 100 : 0, color: "var(--green)", sub: `${m.calories ?? "–"} kcal${m.carbsG != null ? ` · ${m.carbsG}g C · ${m.fatG}g F` : ""}`, input: quickInput("proteinG", 5, "grams") }),
+    metricCard({ icon: "🍗", title: "Nutrition", value: m.proteinG ?? "–", unit: "g protein", pct: m.proteinG ? m.proteinG / GOALS.proteinG * 100 : 0, color: "var(--green)", sub: `${m.calories ?? "–"} kcal${m.carbsG != null ? ` · ${m.carbsG}g C · ${m.fiberG ?? 0}g Fi · ${m.fatG}g F` : ""}`, input: quickInput("proteinG", 5, "grams") }),
     metricCard({ icon: "💼", title: "Career", value: m.deepWorkH ?? "–", unit: "h deep", pct: m.deepWorkH ? m.deepWorkH / GOALS.deepWorkH * 100 : 0, color: "var(--blue)", sub: `${m.pomodoros || 0} pomodoros · ${m.applications || 0} apps`, input: quickInput("deepWorkH", 0.5, "hours") }),
     metricCard({ icon: "🤖", title: "Learning", value: learnMin || "–", unit: "min", pct: learnMin / GOALS.learnMin * 100, color: "var(--violet)", sub: `AI ${m.aiMin || 0} · QA ${m.playwrightMin || 0} min` }),
     metricCard({ icon: "📖", title: "Reading", value: m.readMin ?? "–", unit: "min", pct: m.readMin ? m.readMin / GOALS.readMin * 100 : 0, color: "var(--gold)", sub: `${m.pages || 0} pages`, input: quickInput("readMin", 5, "min") }),
@@ -965,13 +968,17 @@ function recomputeFoodMetrics(dayIndex) {
   day.metrics.calories = Math.round(sum("calories"));
   day.metrics.proteinG = Math.round(sum("protein"));
   day.metrics.carbsG = Math.round(sum("carbs"));
+  day.metrics.fiberG = Math.round(sum("fiber"));
   day.metrics.fatG = Math.round(sum("fat"));
+  // the habit checkbox stays in lockstep with logged protein once you use the journal —
+  // crosses 100g -> checks itself; drops back below (e.g. an item deleted) -> unchecks
+  day.habits.protein100 = day.metrics.proteinG >= GOALS.proteinG;
 }
 
 function foodRow(f) {
   return `<div class="food-row" data-food="${f.id}">
     <span class="food-name">${esc(f.name)}</span>
-    <span class="food-macros"><b>${f.calories}</b> kcal <i>·</i> P ${f.protein}g <i>·</i> C ${f.carbs}g <i>·</i> F ${f.fat}g</span>
+    <span class="food-macros"><b>${f.calories}</b> kcal <i>·</i> P ${f.protein}g <i>·</i> C ${f.carbs}g <i>·</i> Fi ${f.fiber || 0}g <i>·</i> F ${f.fat}g</span>
     <button type="button" class="food-del" title="Delete entry">✕</button>
   </div>`;
 }
@@ -991,12 +998,14 @@ function renderFood() {
     calories: day.food.reduce((s, f) => s + (Number(f.calories) || 0), 0),
     protein: day.food.reduce((s, f) => s + (Number(f.protein) || 0), 0),
     carbs: day.food.reduce((s, f) => s + (Number(f.carbs) || 0), 0),
+    fiber: day.food.reduce((s, f) => s + (Number(f.fiber) || 0), 0),
     fat: day.food.reduce((s, f) => s + (Number(f.fat) || 0), 0),
   };
   $("#food-totals").innerHTML =
     macroTile("Calories", totals.calories, GOALS.calories, "kcal", "var(--gold)") +
     macroTile("Protein", totals.protein, GOALS.proteinG, "g", "var(--green)") +
     macroTile("Carbs", totals.carbs, GOALS.carbsG, "g", "var(--chart-blue)") +
+    macroTile("Fiber", totals.fiber, GOALS.fiberG, "g", "var(--gold-soft)") +
     macroTile("Fat", totals.fat, GOALS.fatG, "g", "var(--violet)");
 
   const sections = MEALS.map(md => {
@@ -1014,6 +1023,16 @@ function renderFood() {
   $("#food-count").textContent = day.food.length ? `${day.food.length} item${day.food.length === 1 ? "" : "s"} logged` : "";
 }
 
+// 8-12 breakfast, 12-16 lunch, 16-19 snack, 19-23 dinner, else (late night) snack
+function mealForCurrentTime() {
+  const h = new Date().getHours();
+  if (h >= 8 && h < 12) return "breakfast";
+  if (h >= 12 && h < 16) return "lunch";
+  if (h >= 16 && h < 19) return "snack";
+  if (h >= 19 && h < 23) return "dinner";
+  return "snack";
+}
+
 function addFoodEntry() {
   const nameInput = $("#food-name");
   const name = nameInput.value.trim();
@@ -1021,21 +1040,22 @@ function addFoodEntry() {
   const cal = Number($("#food-cal").value) || 0;
   const protein = Number($("#food-protein").value) || 0;
   const carbs = Number($("#food-carbs").value) || 0;
+  const fiber = Number($("#food-fiber").value) || 0;
   const fat = Number($("#food-fat").value) || 0;
   selDay().food.push({
     id: "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    meal: $("#food-meal").value, name, calories: cal, protein, carbs, fat, createdAt: Date.now(),
+    meal: $("#food-meal").value, name, calories: cal, protein, carbs, fiber, fat, createdAt: Date.now(),
   });
   recomputeFoodMetrics(state.selectedDay - 1);
-  nameInput.value = ""; $("#food-cal").value = ""; $("#food-protein").value = ""; $("#food-carbs").value = ""; $("#food-fat").value = "";
+  nameInput.value = ""; $("#food-cal").value = ""; $("#food-protein").value = ""; $("#food-carbs").value = ""; $("#food-fiber").value = ""; $("#food-fat").value = "";
   nameInput.focus();
   renderFood();
   renderMetricCards();
-  updateAll({ fullHabits: false, metrics: false });
+  updateAll({ metrics: false });
 }
 
 $("#food-add-btn").addEventListener("click", addFoodEntry);
-["food-name", "food-cal", "food-protein", "food-carbs", "food-fat"].forEach(id => {
+["food-name", "food-cal", "food-protein", "food-carbs", "food-fiber", "food-fat"].forEach(id => {
   $("#" + id).addEventListener("keydown", e => { if (e.key === "Enter") addFoodEntry(); });
 });
 
@@ -1046,7 +1066,7 @@ $("#food-sections").addEventListener("click", e => {
   recomputeFoodMetrics(state.selectedDay - 1);
   renderFood();
   renderMetricCards();
-  updateAll({ fullHabits: false, metrics: false });
+  updateAll({ metrics: false });
 });
 
 /* ---------- detox + reading ---------- */
@@ -1641,7 +1661,7 @@ function switchPanel(panelId) {
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === panelId));
   const week = computeWeek();
   if (panelId === "panel-tasks") { renderTasks(); $("#task-input").focus(); }
-  if (panelId === "panel-food") { renderFood(); $("#food-name").focus(); }
+  if (panelId === "panel-food") { $("#food-meal").value = mealForCurrentTime(); renderFood(); $("#food-name").focus(); }
   if (panelId === "panel-analytics") renderAnalytics(week);
   if (panelId === "panel-career") renderCareer();
   if (panelId === "panel-fitness") renderFitness();
@@ -1660,7 +1680,13 @@ $("#habit-list").addEventListener("change", e => {
   if (!habitEl) return;
   const id = habitEl.dataset.habit;
   const h = HABITS.find(x => x.id === id);
-  const checked = habitEl.querySelector("input").checked;
+  const checkbox = habitEl.querySelector("input");
+  if (id === "protein100" && selDay().food.length > 0) {
+    checkbox.checked = selDay().habits[id]; // revert — this habit follows the Food Journal now
+    toast("Protein habit is auto-tracked from your Food Journal", "🍽");
+    return;
+  }
+  const checked = checkbox.checked;
   selDay().habits[id] = checked;
   habitEl.classList.toggle("checked", checked);
   floatXp(habitEl, checked ? h.xp : -h.xp);
