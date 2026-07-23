@@ -244,15 +244,31 @@ function loadState() {
   }
 }
 
+// fingerprint of the actual data — excludes meta.lastModified (its own mutation
+// would always show a diff) and selectedDay (just which tab you're looking at,
+// not content). save() is called on every render/day-switch/panel-switch, not
+// just genuine edits, so lastModified must only bump when this actually changes —
+// otherwise merely opening the app on a device with old data stamps it "now" and
+// makes stale data look newer than a device with real, more recent edits.
+function contentFingerprint(s) {
+  const { lastModified, ...restMeta } = s.meta;
+  const { selectedDay, ...rest } = s;
+  return JSON.stringify({ ...rest, meta: restMeta });
+}
+
 let state = loadState();
+let lastSavedSnapshot = contentFingerprint(state);
 let saveTimer = null;
 let applyingRemote = false; // suppress lastModified bumps + sync pushes while applying cloud data
 function save() {
   clearTimeout(saveTimer);
   const silent = applyingRemote;
-  if (!silent) state.meta.lastModified = Date.now();
+  if (!silent && contentFingerprint(state) !== lastSavedSnapshot) {
+    state.meta.lastModified = Date.now();
+  }
   saveTimer = setTimeout(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    lastSavedSnapshot = contentFingerprint(state);
     if (!silent) window.dispatchEvent(new CustomEvent("weekmaxxing:saved"));
   }, 150);
 }
