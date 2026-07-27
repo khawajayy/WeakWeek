@@ -980,6 +980,44 @@ body::before {
 /* ==========================================================================
    Week report
    ========================================================================== */
+/* ---------- weekly closure ---------- */
+.week-heading {
+  text-align: center;
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.week-manage-sub { color: var(--text-2); font-size: 13px; margin: 0 0 14px; line-height: 1.6; }
+.past-weeks-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.past-weeks-empty { font-size: 12.5px; color: var(--text-3); padding: 6px 2px; }
+.past-week-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--font); font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+  transition: all var(--speed) var(--ease);
+}
+.past-week-pill:hover { border-color: var(--border-strong); background: var(--surface-3); transform: translateY(-1px); }
+.pwp-range { font-weight: 500; color: var(--text-3); }
+.pwp-grade {
+  font-weight: 800; color: var(--gold);
+  background: rgba(232,179,57,.14);
+  padding: 1px 8px; border-radius: 99px;
+}
+.archived-report-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(57,135,229,.10);
+  border: 1px solid rgba(57,135,229,.3);
+  font-size: 12.5px; font-weight: 700; color: var(--blue);
+}
+.archived-report-banner .link-btn { color: var(--blue); text-decoration: none; font-weight: 700; }
+.archived-report-banner .link-btn:hover { color: var(--red); }
+
 .report-cta { text-align: center; padding: 40px 20px; }
 .report-cta h2 { margin: 0 0 8px; }
 .report-cta p { color: var(--text-2); font-size: 14px; margin: 0 0 18px; }
@@ -1174,8 +1212,9 @@ kbd {
    ========================================================================== */
 @media print {
   body { background: #fff; color: #111; }
-  body::before, #fx-canvas, .topbar, .day-tabs, .section-tabs, .footer,
-  .toast-stack, .modal-backdrop, .levelup-overlay, .report-cta { display: none !important; }
+  body::before, #fx-canvas, .topbar, .week-heading, .day-tabs, .section-tabs, .footer,
+  .toast-stack, .modal-backdrop, .levelup-overlay, .report-cta, .week-manage-sub,
+  #btn-close-week, .past-weeks-list, .archived-report-banner { display: none !important; }
   .panel { display: block !important; page-break-inside: avoid; margin-bottom: 20px; }
   .glass, .metric-card {
     background: #fff !important; border: 1px solid #ddd !important;

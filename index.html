@@ -116,6 +116,9 @@
     </div>
   </section>
 
+  <!-- ============ WEEK HEADING ============ -->
+  <div class="week-heading" id="week-heading">Week 1</div>
+
   <!-- ============ DAY TABS ============ -->
   <nav class="day-tabs" id="day-tabs" aria-label="Select day"></nav>
 
@@ -317,12 +320,23 @@
 
   <!-- ============ WEEK REPORT PANEL ============ -->
   <section class="panel" id="panel-report">
+    <div class="card glass">
+      <div class="card-header">
+        <h2>🗂 Week Management</h2>
+        <span class="card-header-meta" id="week-manage-meta">Week 1</span>
+      </div>
+      <p class="week-manage-sub">Close out this week to bank your XP and start fresh. Pending tasks and all notes carry over automatically; this week's report is archived below so you can look back anytime.</p>
+      <button class="btn-primary" id="btn-close-week">🔒 Close Week &amp; Start Next Week</button>
+      <div id="past-weeks-list" class="past-weeks-list"></div>
+    </div>
+
     <div class="card glass report-cta" id="report-cta">
       <h2>📜 End of Week Report</h2>
       <p>Generate your full performance review — grades, radar, heatmap, and a written debrief.</p>
       <button class="btn-primary" id="btn-generate-report">Generate Weekly Report</button>
     </div>
     <div id="report-content" class="report-content" hidden></div>
+    <div id="archived-report-content" class="report-content" hidden></div>
   </section>
 
 </main>

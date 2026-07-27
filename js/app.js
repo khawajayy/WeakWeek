@@ -157,12 +157,14 @@ function defaultState() {
     startDate: toISODate(mondayOf(new Date())),
     selectedDay: 1,
     theme: "dark",
-    meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {}, lastModified: 0 },
+    meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {}, lastModified: 0, weekNumber: 1, bankedXp: 0 },
     days: Array.from({ length: WEEK_DAYS }, emptyDay),
     // {id, text, priority 1-4, day 1-7|null (null = anytime), done, doneDay, createdAt}
     tasks: [],
     // {id, text, pinned, createdAt, updatedAt} — week-wide scratchpad, not tied to a day
     notes: [],
+    // frozen snapshots of closed-out weeks — see closeWeek()
+    pastWeeks: [],
   };
 }
 
@@ -196,6 +198,7 @@ function normalizeState(saved) {
   });
   state.tasks = Array.isArray(saved.tasks) ? saved.tasks : [];
   state.notes = Array.isArray(saved.notes) ? saved.notes : [];
+  state.pastWeeks = Array.isArray(saved.pastWeeks) ? saved.pastWeeks : [];
   return state;
 }
 
@@ -335,7 +338,8 @@ function computeWeek() {
   const achievementXp = Object.keys(state.meta.unlocked)
     .reduce((s, id) => { const a = ACHIEVEMENTS.find(x => x.id === id); return s + (a ? a.xp : 0); }, 0);
   const habitXp = days.reduce((s, d) => s + d.score, 0);
-  const totalXp = habitXp + achievementXp;
+  const bankedXp = state.meta.bankedXp || 0; // XP earned in previously closed weeks
+  const totalXp = bankedXp + habitXp + achievementXp;
   const level = levelForXp(totalXp);
   const today = todayDayNumber();
   const elapsed = days.slice(0, today);
@@ -356,7 +360,7 @@ function computeWeek() {
     if (totalXp >= RANKS[i].xp) { rank = RANKS[i]; nextRank = RANKS[i + 1] || null; break; }
   }
 
-  return { days, habitXp, achievementXp, totalXp, level, weekPct, elapsedPct, streak, rank, nextRank, today };
+  return { days, habitXp, achievementXp, bankedXp, totalXp, level, weekPct, elapsedPct, streak, rank, nextRank, today };
 }
 
 /* streak of consecutive days (from day 1 of the elapsed week) a habit was kept */
@@ -1563,13 +1567,9 @@ function writtenReview(week, scores, best, worst) {
   return p.join("");
 }
 
-function renderReport() {
-  const week = computeWeek();
-  const scores = computeReportScores(week);
-  const rated = week.days.slice(0, week.today);
-  const best = [...rated].sort((a, b) => b.score - a.score || b.pct - a.pct)[0];
-  const worst = [...rated].sort((a, b) => a.score - b.score || a.pct - b.pct)[0];
-
+// shared HTML builder — used for both the live in-progress report and archived
+// (closed) past-week reports, so they look and behave identically
+function buildReportHtml({ scores, best, worst, reviewHtml, days, heatmapTodayLimit, dayHeaderLabel }) {
   const scoreTile = (label, val, color) => `
     <div class="report-score-tile">
       <div class="rs-label">${label}</div>
@@ -1578,20 +1578,20 @@ function renderReport() {
     </div>`;
 
   const heatRows = HABITS.map(h => `
-    <tr><th>${h.label}</th>${state.days.map((d, i) => {
+    <tr><th>${h.label}</th>${days.map((d, i) => {
       const applies = !h.days || h.days.includes(i + 1);
-      const cls = !applies ? "future-cell" : i + 1 > week.today ? "future-cell" : d.habits[h.id] ? "done" : "missed";
+      const cls = !applies ? "future-cell" : i + 1 > heatmapTodayLimit ? "future-cell" : d.habits[h.id] ? "done" : "missed";
       return `<td class="${cls}" title="${h.label} — Day ${i + 1}${applies ? "" : " (off day)"}"></td>`;
     }).join("")}</tr>`).join("");
 
-  $("#report-content").innerHTML = `
+  return `
     <div class="report-grade-row">
       <div class="grade-card glass">
         <div class="grade-letter">${scores.grade}</div>
         <div class="grade-label">Overall Grade · ${scores.overall}/100</div>
       </div>
       <div class="card glass" style="margin:0">
-        <div class="card-header"><h2>📊 Pillar Scores</h2><span class="card-header-meta">Day ${week.today} of 7</span></div>
+        <div class="card-header"><h2>📊 Pillar Scores</h2><span class="card-header-meta">${dayHeaderLabel}</span></div>
         <div class="report-scores">
           ${scoreTile("Productivity", scores.productivity, "var(--chart-blue)")}
           ${scoreTile("Health", scores.health, "var(--chart-green)")}
@@ -1625,11 +1625,121 @@ function renderReport() {
 
     <div class="card glass" style="margin:0">
       <div class="card-header"><h2>📝 Performance Review</h2><span class="card-header-meta">auto-generated from your data</span></div>
-      <div class="review-text">${writtenReview(week, scores, best, worst)}</div>
+      <div class="review-text">${reviewHtml}</div>
     </div>`;
+}
+
+function renderReport() {
+  const week = computeWeek();
+  const scores = computeReportScores(week);
+  const rated = week.days.slice(0, week.today);
+  const best = [...rated].sort((a, b) => b.score - a.score || b.pct - a.pct)[0];
+  const worst = [...rated].sort((a, b) => a.score - b.score || a.pct - b.pct)[0];
+  const reviewHtml = writtenReview(week, scores, best, worst);
+
+  $("#report-content").innerHTML = buildReportHtml({
+    scores, best, worst, reviewHtml, days: state.days,
+    heatmapTodayLimit: week.today, dayHeaderLabel: `Day ${week.today} of 7`,
+  });
   $("#report-content").hidden = false;
+  $("#archived-report-content").hidden = true;
   if (scores.grade === "A+" || scores.grade === "A") FX.confetti();
 }
+
+function formatWeekRange(startDateStr) {
+  const start = new Date(startDateStr + "T00:00:00");
+  const end = new Date(start.getTime() + 6 * 86400000);
+  const fmt = d => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+function renderArchivedReport(pw) {
+  $("#archived-report-content").innerHTML = `
+    <div class="archived-report-banner">
+      <span>🗂 Archived — Week ${pw.weekNumber} (${formatWeekRange(pw.startDate)})</span>
+      <button type="button" class="link-btn" id="btn-close-archived">✕ Close</button>
+    </div>
+    ${buildReportHtml({
+      scores: pw.scores, best: pw.best, worst: pw.worst, reviewHtml: pw.reviewHtml, days: pw.days,
+      heatmapTodayLimit: 7, dayHeaderLabel: "Final",
+    })}`;
+  $("#archived-report-content").hidden = false;
+  $("#report-content").hidden = true;
+  $("#btn-close-archived").addEventListener("click", () => { $("#archived-report-content").hidden = true; });
+}
+
+/* ---------- weekly closure ---------- */
+
+function renderWeekHeading() {
+  $("#week-heading").textContent = `Week ${state.meta.weekNumber || 1} · ${formatWeekRange(state.startDate)}`;
+}
+
+function renderWeekManage() {
+  $("#week-manage-meta").textContent = `Week ${state.meta.weekNumber || 1}`;
+  const list = state.pastWeeks;
+  $("#past-weeks-list").innerHTML = list.length
+    ? [...list].reverse().map((pw, idx) => `
+        <button type="button" class="past-week-pill" data-past-week="${list.length - 1 - idx}">
+          Week ${pw.weekNumber} <span class="pwp-range">${formatWeekRange(pw.startDate)}</span>
+          <span class="pwp-grade">${pw.scores.grade}</span>
+        </button>`).join("")
+    : `<div class="past-weeks-empty">No past weeks yet — close this week when you're ready to archive it and move on.</div>`;
+}
+
+$("#past-weeks-list").addEventListener("click", e => {
+  const btn = e.target.closest(".past-week-pill");
+  if (!btn) return;
+  const pw = state.pastWeeks[Number(btn.dataset.pastWeek)];
+  if (pw) renderArchivedReport(pw);
+});
+
+function closeWeek() {
+  const week = computeWeek();
+  const scores = computeReportScores(week);
+  const rated = week.days; // the week is closing — every day counts as final
+  const best = [...rated].sort((a, b) => b.score - a.score || b.pct - a.pct)[0];
+  const worst = [...rated].sort((a, b) => a.score - b.score || a.pct - b.pct)[0];
+  const reviewHtml = writtenReview(week, scores, best, worst);
+
+  state.pastWeeks.push({
+    weekNumber: state.meta.weekNumber || 1,
+    startDate: state.startDate,
+    closedAt: Date.now(),
+    totalXp: week.totalXp, level: week.level, rankName: week.rank.name,
+    scores, best, worst, reviewHtml,
+    days: JSON.parse(JSON.stringify(state.days)), // frozen copy — the live days array resets next
+    tasksCompleted: state.tasks.filter(t => t.done).length,
+  });
+
+  state.meta.bankedXp = (state.meta.bankedXp || 0) + week.habitXp; // achievement XP is already permanent
+  const closedWeekNumber = state.meta.weekNumber || 1;
+  state.meta.weekNumber = closedWeekNumber + 1;
+  state.meta.celebratedPerfect = {};
+
+  const nextMonday = new Date(new Date(state.startDate + "T00:00:00").getTime() + 7 * 86400000);
+  state.startDate = toISODate(nextMonday);
+  state.days = Array.from({ length: WEEK_DAYS }, emptyDay);
+  state.tasks = state.tasks.filter(t => !t.done); // pending tasks carry over; finished ones are done
+  // notes carry over untouched — they were never day-scoped
+  state.selectedDay = todayDayNumber();
+
+  $("#report-content").hidden = true;
+  $("#archived-report-content").hidden = true;
+  switchPanel("panel-report");
+  renderEverything();
+  FX.confetti();
+  toast(`Week ${closedWeekNumber} closed and archived! Welcome to Week ${state.meta.weekNumber} 🎉`, "📦", "toast-gold");
+}
+
+$("#btn-close-week").addEventListener("click", () => {
+  const wn = state.meta.weekNumber || 1;
+  const pendingTasks = state.tasks.filter(t => !t.done).length;
+  const msg = `Close out Week ${wn} and start Week ${wn + 1}?\n\n`
+    + `This week's report gets archived under Past Weeks.\n`
+    + `${pendingTasks} pending task${pendingTasks === 1 ? "" : "s"} and all notes carry over; completed tasks are cleared.\n`
+    + `This can't be undone.`;
+  if (confirm(msg)) closeWeek();
+});
 
 /* ==========================================================================
    Master update
@@ -1717,6 +1827,7 @@ function switchPanel(panelId) {
   if (panelId === "panel-detox") renderDetox();
   if (panelId === "panel-journal") renderJournal();
   if (panelId === "panel-notes") { renderNotes(); $("#note-input").focus(); }
+  if (panelId === "panel-report") renderWeekManage();
 }
 
 /* ==========================================================================
@@ -1907,6 +2018,8 @@ setInterval(tickClock, 1000);
 
 function renderEverything() {
   applyTheme();
+  renderWeekHeading();
+  renderWeekManage();
   renderTasks();
   renderJournal();
   renderNotes();
