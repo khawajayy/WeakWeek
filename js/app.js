@@ -289,6 +289,16 @@ function todayDayNumber() {
 function isFutureDay(n) { return n > todayDayNumber(); }
 function isPastOrToday(n) { return n <= todayDayNumber(); }
 
+// you asked for this: if a past/today day never got a sleep entry, assume your
+// regular 8h rather than penalize a forgotten log. An explicit 0 still counts
+// as "logged" (only null/never-entered gets the default) — future days stay null.
+const DEFAULT_SLEEP_HOURS = 8;
+function effectiveSleepHours(dayIndex) {
+  const m = state.days[dayIndex].metrics;
+  if (m.sleepHours != null) return m.sleepHours;
+  return isPastOrToday(dayIndex + 1) ? DEFAULT_SLEEP_HOURS : null;
+}
+
 const CHEAT_DAY_GROUP = "Nutrition Discipline";
 function cheatDaySuspends(h, day) { return day.cheatDay && h.group === CHEAT_DAY_GROUP; }
 
@@ -885,8 +895,10 @@ function renderMetricCards() {
   const j = selDay().journal;
   const journalDone = (j.p1 || j.mission ? 1 : 0) + (j.wins || j.gratitude ? 1 : 0);
   const learnMin = (m.aiMin || 0) + (m.playwrightMin || 0);
+  const sleepEff = effectiveSleepHours(state.selectedDay - 1);
+  const sleepIsDefault = m.sleepHours == null && sleepEff != null;
   const cards = [
-    metricCard({ icon: "😴", title: "Sleep", value: m.sleepHours ?? "–", unit: "h", pct: m.sleepHours ? m.sleepHours / GOALS.sleepHours * 100 : 0, color: "var(--violet)", sub: `goal ${GOALS.sleepHours}h`, input: quickInput("sleepHours", 0.5, "hours") }),
+    metricCard({ icon: "😴", title: "Sleep", value: sleepEff ?? "–", unit: "h", pct: sleepEff ? sleepEff / GOALS.sleepHours * 100 : 0, color: "var(--violet)", sub: sleepIsDefault ? `assumed ${DEFAULT_SLEEP_HOURS}h — not logged` : `goal ${GOALS.sleepHours}h`, input: quickInput("sleepHours", 0.5, "hours") }),
     metricCard({ icon: "🏋️", title: "Workout", value: m.workoutMin ?? "–", unit: "min", pct: m.workoutMin ? m.workoutMin / GOALS.workoutMin * 100 : 0, color: "var(--blue)", sub: `goal ${GOALS.workoutMin} min`, input: quickInput("workoutMin", 5, "min") }),
     metricCard({ icon: "🍗", title: "Nutrition", value: m.proteinG ?? "–", unit: "g protein", pct: m.proteinG ? m.proteinG / GOALS.proteinG * 100 : 0, color: "var(--green)", sub: `${m.calories ?? "–"} kcal${m.carbsG != null ? ` · ${m.carbsG}g C · ${m.fiberG ?? 0}g Fi · ${m.fatG}g F` : ""}`, input: quickInput("proteinG", 5, "grams") }),
     metricCard({ icon: "💼", title: "Career", value: m.deepWorkH ?? "–", unit: "h deep", pct: m.deepWorkH ? m.deepWorkH / GOALS.deepWorkH * 100 : 0, color: "var(--blue)", sub: `${m.pomodoros || 0} pomodoros · ${m.applications || 0} apps`, input: quickInput("deepWorkH", 0.5, "hours") }),
@@ -951,7 +963,7 @@ function renderFitness() {
     numberField("workoutMin", "Workout", "min", m.workoutMin, { step: 5 }),
     numberField("walkMin", "Walking", "min", m.walkMin, { step: 5 }),
     numberField("steps", "Steps", "", m.steps, { step: 500 }),
-    numberField("sleepHours", "Sleep", "h", m.sleepHours, { step: 0.5 }),
+    numberField("sleepHours", "Sleep", "h", m.sleepHours, { step: 0.5, placeholder: `${DEFAULT_SLEEP_HOURS} (default)` }),
   ].join("") + `
     <div class="field"><label>Body Energy</label>${emojiScale("energy", m.energy)}</div>
     <div class="field"><label>Recovery</label>${emojiScale("recovery", m.recovery)}</div>`;
@@ -1428,7 +1440,7 @@ function renderAnalytics(week) {
     { title: "Daily Score", sub: "habit XP minus penalties", html: Charts.bar({ values: week.days.map(d => d.score), unit: " XP", color: "var(--chart-blue)" }) },
     { title: "Cumulative XP", sub: "total XP growth across the week", html: Charts.line({ values: week.days.reduce((acc, d, i) => { acc.push((acc[i - 1] || 0) + d.score); return acc; }, []), unit: " XP", color: "var(--chart-gold)", area: true }) },
     { title: "Habit Completion", sub: "% of that day's habits", html: Charts.bar({ values: week.days.map(d => d.pct), unit: "%", max: 100, color: "var(--chart-green)" }) },
-    { title: "Sleep", sub: `goal ${GOALS.sleepHours}h`, html: Charts.line({ values: days.map(d => d.metrics.sleepHours), goal: GOALS.sleepHours, unit: "h", color: "var(--chart-violet)" }) },
+    { title: "Sleep", sub: `goal ${GOALS.sleepHours}h · unlogged past days assume ${DEFAULT_SLEEP_HOURS}h`, html: Charts.line({ values: days.map((d, i) => effectiveSleepHours(i)), goal: GOALS.sleepHours, unit: "h", color: "var(--chart-violet)" }) },
     { title: "Workout Minutes", sub: `goal ${GOALS.workoutMin} min`, html: Charts.bar({ values: days.map(d => d.metrics.workoutMin || 0), goal: GOALS.workoutMin, unit: "m", color: "var(--chart-blue)" }) },
     { title: "Water", sub: `goal ${GOALS.waterL}L`, html: Charts.bar({ values: days.map(d => d.metrics.waterL || 0), goal: GOALS.waterL, unit: "L", color: "var(--chart-blue)" }) },
     { title: "Reading Minutes", sub: `goal ${GOALS.readMin} min`, html: Charts.bar({ values: days.map(d => d.metrics.readMin || 0), goal: GOALS.readMin, unit: "m", color: "var(--chart-gold)" }) },
@@ -1471,10 +1483,11 @@ function computeReportScores(week) {
     return (dw * 60 + habits * 40);
   })));
 
-  const health = cap(avg(days.slice(0, elapsed).map(d => {
+  const health = cap(avg(days.slice(0, elapsed).map((d, i) => {
     const m = d.metrics;
+    const sleepEff = effectiveSleepHours(i);
     let pts = 0;
-    pts += m.sleepHours ? Math.min(m.sleepHours / GOALS.sleepHours, 1) * 25 : 0;
+    pts += sleepEff ? Math.min(sleepEff / GOALS.sleepHours, 1) * 25 : 0;
     pts += Math.min((m.waterL || 0) / GOALS.waterL, 1) * 20;
     pts += Math.min((m.proteinG || 0) / GOALS.proteinG, 1) * 20;
     pts += ((m.workoutMin || 0) + (m.walkMin || 0)) >= 30 || d.habits.gymOrWalk ? 20 : 0;
@@ -1504,9 +1517,10 @@ function computeReportScores(week) {
     return pts;
   })));
 
-  const recovery = cap(avg(days.slice(0, elapsed).map(d => {
+  const recovery = cap(avg(days.slice(0, elapsed).map((d, i) => {
     const m = d.metrics;
-    let pts = m.sleepHours ? Math.min(m.sleepHours / GOALS.sleepHours, 1) * 50 : 0;
+    const sleepEff = effectiveSleepHours(i);
+    let pts = sleepEff ? Math.min(sleepEff / GOALS.sleepHours, 1) * 50 : 0;
     pts += (m.recovery || 0) / 5 * 25 + (m.energy || 0) / 5 * 25;
     return pts;
   })));
