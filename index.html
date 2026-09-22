@@ -29,6 +29,7 @@
   <div class="topbar-right">
     <span class="sync-dot local" id="sync-dot" title="Not signed in — data stays on this device"></span>
     <button class="auth-btn" id="btn-auth" title="Sign in with Google to sync across devices">Sign in</button>
+    <button class="icon-btn" id="btn-admin" title="Admin Panel — Manage Habits & XP (O)">⚙️</button>
     <button class="icon-btn" id="btn-shortcuts" title="Keyboard shortcuts (?)">⌨</button>
     <button class="icon-btn" id="btn-export-excel" title="Export to Excel (E)">⬇</button>
     <button class="icon-btn" id="btn-export-pdf" title="Export to PDF (P)">🖨</button>
@@ -149,6 +150,7 @@
           <div class="card-header">
             <h2>⚡ Daily Habits</h2>
             <div class="card-header-right">
+              <button type="button" class="btn-manage-habits" id="btn-manage-habits" title="Customize habits and adjust XP">⚙️ Manage</button>
               <div class="cheat-day-toggle" id="cheat-day-toggle" title="Pauses Mountain Dew / Sugar / Junk Food / Fast Food penalties for this day only">
                 <span class="cheat-day-label">🎉 Cheat Day</span>
                 <button type="button" class="toggle-switch" id="cheat-day-switch" role="switch" aria-checked="false"><span class="toggle-knob"></span></button>
@@ -360,6 +362,7 @@
       <tr><td><kbd>A</kbd></td><td>Go to Analytics</td></tr>
       <tr><td><kbd>G</kbd></td><td>Go to Achievements</td></tr>
       <tr><td><kbd>R</kbd></td><td>Generate Week Report</td></tr>
+      <tr><td><kbd>O</kbd></td><td>Open Admin Panel (Habits &amp; XP)</td></tr>
       <tr><td><kbd>E</kbd></td><td>Export to Excel (CSV)</td></tr>
       <tr><td><kbd>P</kbd></td><td>Export to PDF (print)</td></tr>
       <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
@@ -377,6 +380,102 @@
     <div class="levelup-burst">✦</div>
     <div class="levelup-title">LEVEL UP</div>
     <div class="levelup-level" id="levelup-level">2</div>
+  </div>
+</div>
+
+<!-- ============ ADMIN PANEL MODAL ============ -->
+<div class="modal-backdrop" id="modal-admin" hidden>
+  <div class="modal modal-lg glass">
+    <div class="card-header modal-header">
+      <div class="modal-title-wrap">
+        <h2>⚙️ Admin Panel</h2>
+        <span class="modal-subtitle">Manage Daily Habits &amp; Adjust XP</span>
+      </div>
+      <div class="modal-header-actions">
+        <span class="badge badge-gold" id="admin-habit-stats">0 habits</span>
+        <button class="icon-btn modal-close" data-close title="Close (Esc)">✕</button>
+      </div>
+    </div>
+
+    <div class="admin-tabs">
+      <button class="admin-tab active" id="tab-btn-habits" data-tab="list">All Habits (<span id="admin-tab-count">0</span>)</button>
+      <button class="admin-tab" id="tab-btn-add" data-tab="add">＋ Add New Habit</button>
+    </div>
+
+    <!-- Habit List Tab -->
+    <div class="admin-tab-pane" id="admin-pane-list">
+      <div class="admin-toolbar">
+        <input type="text" id="admin-search" placeholder="Filter habits by title or category…" class="admin-search-input">
+        <select id="admin-group-filter" class="admin-select">
+          <option value="all">All Categories</option>
+        </select>
+      </div>
+      <div class="admin-habits-scroll" id="admin-habits-container">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- Add Habit Tab -->
+    <div class="admin-tab-pane" id="admin-pane-add" hidden>
+      <form id="admin-add-habit-form" class="admin-form">
+        <div class="form-row">
+          <label for="habit-new-label">Habit Name <span class="req">*</span></label>
+          <input type="text" id="habit-new-label" placeholder="e.g. Cold Shower, 10 min Meditation" required maxlength="60" class="admin-input">
+        </div>
+        <div class="form-grid-2">
+          <div class="form-row">
+            <label for="habit-new-group">Category / Group <span class="req">*</span></label>
+            <select id="habit-new-group" class="admin-select">
+              <option value="Morning Protocol">Morning Protocol</option>
+              <option value="Prayer 🕌">Prayer 🕌</option>
+              <option value="Nutrition Discipline">Nutrition Discipline</option>
+              <option value="Body">Body</option>
+              <option value="Mind">Mind</option>
+              <option value="Career Engine">Career Engine</option>
+              <option value="Sleep">Sleep</option>
+              <option value="__custom__">＋ Create New Category…</option>
+            </select>
+            <input type="text" id="habit-custom-group" placeholder="Enter new category name…" hidden maxlength="30" class="admin-input mt-2">
+          </div>
+          <div class="form-row">
+            <label for="habit-new-xp">XP Reward <span class="req">*</span></label>
+            <div class="input-xp-wrap">
+              <span class="input-xp-prefix">＋</span>
+              <input type="number" id="habit-new-xp" value="15" min="1" max="500" required class="admin-input">
+              <span class="input-xp-suffix">XP</span>
+            </div>
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-row">
+            <label for="habit-new-penalty">Missed Penalty (Optional XP)</label>
+            <div class="input-xp-wrap penalty-wrap">
+              <span class="input-xp-prefix">−</span>
+              <input type="number" id="habit-new-penalty" value="0" min="0" max="500" placeholder="0" class="admin-input">
+              <span class="input-xp-suffix">XP</span>
+            </div>
+            <span class="form-hint">XP deducted if unchecked on past days (0 for none)</span>
+          </div>
+          <div class="form-row">
+            <label for="habit-new-days">Active Days</label>
+            <select id="habit-new-days" class="admin-select">
+              <option value="all">Every Day (Mon – Sun)</option>
+              <option value="workdays">Workdays Only (Mon – Fri)</option>
+              <option value="weekends">Weekends Only (Sat – Sun)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" id="btn-submit-add-habit">Create Habit</button>
+          <button type="button" class="btn-ghost" id="btn-cancel-add-habit">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="admin-footer">
+      <button type="button" class="btn-ghost-danger btn-sm" id="btn-restore-default-habits" title="Revert to factory default 25 habits">↺ Restore Default Habits</button>
+      <button type="button" class="btn-primary btn-sm" data-close>Done</button>
+    </div>
   </div>
 </div>
 
