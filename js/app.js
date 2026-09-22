@@ -19,7 +19,7 @@
 const WEEK_DAYS = 7;
 const STORAGE_KEY = "weekMaxxing.v1";
 
-const HABITS = [
+const DEFAULT_HABITS = [
   { id: "wake8",       label: "Wake at 8 AM",             group: "Morning Protocol",  xp: 15 },
   { id: "noSnooze",    label: "No Snooze",                group: "Morning Protocol",  xp: 10 },
   { id: "makeBreakfast", label: "Make Breakfast for her",  group: "Morning Protocol",  xp: 10, days: [1, 2, 3, 4, 5] }, // workdays only (Day 1 = Monday)
@@ -47,9 +47,15 @@ const HABITS = [
   { id: "sleepBefore12", label: "Sleep before 12 AM",     group: "Sleep", xp: 15, penalty: 10 },
 ];
 
+function getHabits() {
+  return (typeof state !== "undefined" && Array.isArray(state?.habits) && state.habits.length > 0)
+    ? state.habits
+    : DEFAULT_HABITS;
+}
+
 // habits may be limited to specific days (e.g. workdays); everything scoring a
 // day must go through this filter so day % and perfect-day stay fair
-function habitsForDay(n) { return HABITS.filter(h => !h.days || h.days.includes(n)); }
+function habitsForDay(n) { return getHabits().filter(h => !h.days || h.days.includes(n)); }
 
 const SCREEN_LIMIT_MIN = 120;
 
@@ -158,6 +164,7 @@ function defaultState() {
     selectedDay: 1,
     theme: "dark",
     meta: { lastLevel: 1, unlocked: {}, celebratedPerfect: {}, lastModified: 0, weekNumber: 1, bankedXp: 0 },
+    habits: JSON.parse(JSON.stringify(DEFAULT_HABITS)),
     days: Array.from({ length: WEEK_DAYS }, emptyDay),
     // {id, text, priority 1-4, day 1-7|null (null = anytime), done, doneDay, createdAt}
     tasks: [],
@@ -186,6 +193,16 @@ function mondayOf(date) {
 function normalizeState(saved) {
   const base = defaultState();
   const state = { ...base, ...saved, meta: { ...base.meta, ...(saved.meta || {}) } };
+  state.habits = Array.isArray(saved.habits) && saved.habits.length > 0
+    ? saved.habits.map(h => ({
+        id: String(h.id),
+        label: String(h.label),
+        group: String(h.group || "Custom"),
+        xp: Math.max(1, Number(h.xp) || 10),
+        ...(h.penalty ? { penalty: Math.max(0, Number(h.penalty) || 0) } : {}),
+        ...(Array.isArray(h.days) ? { days: h.days } : {}),
+      }))
+    : JSON.parse(JSON.stringify(DEFAULT_HABITS));
   state.days = base.days.map((d, i) => {
     const sd = (saved.days && saved.days[i]) || {};
     return {
@@ -333,12 +350,12 @@ function computeDay(n) {
   const penalties = dayPenalties(n);
   const penaltyXp = penalties.reduce((s, p) => s + p.xp, 0);
   const score = Math.max(0, earned + taskXp - penaltyXp);
-  const pct = Math.round((doneHabits.length / applicable.length) * 100);
+  const pct = applicable.length ? Math.round((doneHabits.length / applicable.length) * 100) : 100;
   return {
     n, earned, taskXp, penalties, penaltyXp, score, pct,
     habitsDone: doneHabits.length,
     habitsTotal: applicable.length,
-    perfect: doneHabits.length === applicable.length,
+    perfect: applicable.length > 0 && doneHabits.length === applicable.length,
   };
 }
 
@@ -799,6 +816,12 @@ function renderHabits(week) {
   const d = week.days[state.selectedDay - 1];
   const dayHabits = habitsForDay(state.selectedDay);
   const groups = [...new Set(dayHabits.map(h => h.group))];
+  if (dayHabits.length === 0) {
+    $("#habit-list").innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-3);font-size:13px;">No habits scheduled for today. Click <strong>⚙️ Manage</strong> above to customize your habits.</div>`;
+    $("#habit-count").textContent = `0/0 · 0 XP earned`;
+    $("#habit-progress-fill").style.width = "0%";
+    return;
+  }
   $("#habit-list").innerHTML = groups.map(g => `
     <div>
       <div class="habit-group-title">${g}</div>
@@ -1591,7 +1614,7 @@ function buildReportHtml({ scores, best, worst, reviewHtml, days, heatmapTodayLi
       <div class="rs-bar"><i style="width:${val}%;background:${color}"></i></div>
     </div>`;
 
-  const heatRows = HABITS.map(h => `
+  const heatRows = getHabits().map(h => `
     <tr><th>${h.label}</th>${days.map((d, i) => {
       const applies = !h.days || h.days.includes(i + 1);
       const cls = !applies ? "future-cell" : i + 1 > heatmapTodayLimit ? "future-cell" : d.habits[h.id] ? "done" : "missed";
@@ -1853,7 +1876,7 @@ $("#habit-list").addEventListener("change", e => {
   const habitEl = e.target.closest(".habit");
   if (!habitEl) return;
   const id = habitEl.dataset.habit;
-  const h = HABITS.find(x => x.id === id);
+  const h = getHabits().find(x => x.id === id);
   const checkbox = habitEl.querySelector("input");
   if (id === "protein100" && selDay().food.length > 0) {
     checkbox.checked = selDay().habits[id]; // revert — this habit follows the Food Journal now
@@ -1946,7 +1969,7 @@ $("#btn-theme").addEventListener("click", () => {
 // exports
 function exportCsv() {
   const rows = [["Field", ...Array.from({ length: 7 }, (_, i) => `Day ${i + 1}`)]];
-  for (const h of HABITS) rows.push([h.label, ...state.days.map(d => d.habits[h.id] ? "YES" : "no")]);
+  for (const h of getHabits()) rows.push([h.label, ...state.days.map(d => d.habits[h.id] ? "YES" : "no")]);
   rows.push(["Cheat Day", ...state.days.map(d => d.cheatDay ? "YES" : "no")]);
   const metricKeys = Object.keys(emptyDay().metrics);
   for (const k of metricKeys) rows.push([k, ...state.days.map(d => d.metrics[k] ?? "")]);
@@ -1994,7 +2017,12 @@ modal.addEventListener("click", e => {
 // keyboard shortcuts
 document.addEventListener("keydown", e => {
   const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
-  if (e.key === "Escape") { modal.hidden = true; $("#levelup-overlay").hidden = true; return; }
+  if (e.key === "Escape") {
+    modal.hidden = true;
+    closeAdminModal();
+    $("#levelup-overlay").hidden = true;
+    return;
+  }
   if (inField || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key >= "1" && e.key <= "7") switchDay(Number(e.key));
   else if (e.key === "t" || e.key === "T") $("#btn-theme").click();
@@ -2005,10 +2033,291 @@ document.addEventListener("keydown", e => {
   else if (e.key === "a" || e.key === "A") switchPanel("panel-analytics");
   else if (e.key === "g" || e.key === "G") switchPanel("panel-achievements");
   else if (e.key === "r" || e.key === "R") { switchPanel("panel-report"); renderReport(); }
+  else if (e.key === "o" || e.key === "O") openAdminModal("list");
   else if (e.key === "e" || e.key === "E") exportCsv();
   else if (e.key === "p" || e.key === "P") print();
   else if (e.key === "?") modal.hidden = false;
 });
+
+/* ==========================================================================
+   Admin Panel — Manage Daily Habits & Adjust XP
+   ========================================================================== */
+
+const modalAdmin = $("#modal-admin");
+let adminCurrentTab = "list";
+let adminSearchQuery = "";
+let adminGroupFilterVal = "all";
+
+function populateAdminGroupFilter() {
+  const habits = getHabits();
+  const groups = [...new Set(habits.map(h => h.group))].sort();
+  const select = $("#admin-group-filter");
+  const prevVal = select.value;
+  select.innerHTML = `<option value="all">All Categories (${habits.length})</option>` +
+    groups.map(g => `<option value="${esc(g)}">${esc(g)} (${habits.filter(h => h.group === g).length})</option>`).join("");
+  if (groups.includes(prevVal)) select.value = prevVal;
+
+  // Populate the Add Habit group dropdown
+  const groupAddSelect = $("#habit-new-group");
+  const defaultGroups = ["Morning Protocol", "Prayer 🕌", "Nutrition Discipline", "Body", "Mind", "Career Engine", "Sleep"];
+  const allGroups = [...new Set([...defaultGroups, ...groups])];
+  const prevGroupAdd = groupAddSelect.value;
+  groupAddSelect.innerHTML = allGroups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("") +
+    `<option value="__custom__">＋ Create New Category…</option>`;
+  if (allGroups.includes(prevGroupAdd)) groupAddSelect.value = prevGroupAdd;
+}
+
+function renderAdminHabits() {
+  const habits = getHabits();
+  const totalXp = habits.reduce((s, h) => s + (Number(h.xp) || 0), 0);
+  $("#admin-habit-stats").textContent = `${habits.length} habits · ${totalXp} max XP/day`;
+  $("#admin-tab-count").textContent = String(habits.length);
+
+  const q = adminSearchQuery.trim().toLowerCase();
+  const gFilter = adminGroupFilterVal;
+
+  const filtered = habits.filter(h => {
+    const matchQuery = !q || h.label.toLowerCase().includes(q) || h.group.toLowerCase().includes(q);
+    const matchGroup = gFilter === "all" || h.group === gFilter;
+    return matchQuery && matchGroup;
+  });
+
+  if (filtered.length === 0) {
+    $("#admin-habits-container").innerHTML = `
+      <div style="text-align:center;padding:32px 16px;color:var(--text-3);font-size:13px;">
+        No habits match your search or category filter.
+      </div>`;
+    return;
+  }
+
+  const groups = [...new Set(filtered.map(h => h.group))];
+  $("#admin-habits-container").innerHTML = groups.map(g => {
+    const inGroup = filtered.filter(h => h.group === g);
+    return `
+      <div class="admin-group-card">
+        <div class="admin-group-header">
+          <span>${esc(g)}</span>
+          <span class="admin-group-count">${inGroup.length} habit${inGroup.length === 1 ? "" : "s"}</span>
+        </div>
+        <div class="admin-habit-list">
+          ${inGroup.map(h => {
+            const isWorkdays = Array.isArray(h.days) && h.days.length === 5 && h.days.every((d, i) => d === i + 1);
+            const isWeekends = Array.isArray(h.days) && h.days.length === 2 && h.days.includes(6) && h.days.includes(7);
+            const autoTracked = h.id === "protein100";
+            return `
+              <div class="admin-habit-row" data-habit-id="${esc(h.id)}">
+                <div class="admin-habit-info">
+                  <div class="admin-habit-name" title="${esc(h.label)}">${esc(h.label)}</div>
+                  <div class="admin-habit-meta">
+                    ${isWorkdays ? '<span class="admin-pill admin-pill-workdays">Mon–Fri</span>' : ""}
+                    ${isWeekends ? '<span class="admin-pill">Sat–Sun</span>' : ""}
+                    ${autoTracked ? '<span class="admin-pill admin-pill-auto">🍽 Auto-tracked</span>' : ""}
+                    <span>ID: <code>${esc(h.id)}</code></span>
+                  </div>
+                </div>
+
+                <div class="admin-xp-control" title="Reward XP on completion (click to edit)">
+                  <span style="font-size:10px">＋</span>
+                  <input type="number" class="admin-xp-input" value="${h.xp}" min="1" max="500" data-id="${esc(h.id)}" data-field="xp">
+                  <span style="font-size:10px">XP</span>
+                </div>
+
+                <div class="admin-penalty-control ${h.penalty ? '' : 'inactive'}" title="Missed penalty XP on past days (0 = no penalty)">
+                  <span style="font-size:10px">−</span>
+                  <input type="number" class="admin-penalty-input" value="${h.penalty || 0}" min="0" max="500" data-id="${esc(h.id)}" data-field="penalty">
+                  <span style="font-size:10px">XP</span>
+                </div>
+
+                <button type="button" class="btn-delete-habit" data-delete-id="${esc(h.id)}" title="Delete habit &quot;${esc(h.label)}&quot;">🗑</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function openAdminModal(initialTab = "list") {
+  if (!state.habits || !Array.isArray(state.habits)) {
+    state.habits = JSON.parse(JSON.stringify(DEFAULT_HABITS));
+  }
+  switchAdminTab(initialTab);
+  populateAdminGroupFilter();
+  renderAdminHabits();
+  modalAdmin.hidden = false;
+  if (initialTab === "list") {
+    setTimeout(() => $("#admin-search")?.focus(), 50);
+  } else {
+    setTimeout(() => $("#habit-new-label")?.focus(), 50);
+  }
+}
+
+function closeAdminModal() {
+  modalAdmin.hidden = true;
+}
+
+function switchAdminTab(tab) {
+  adminCurrentTab = tab;
+  $("#tab-btn-habits").classList.toggle("active", tab === "list");
+  $("#tab-btn-add").classList.toggle("active", tab === "add");
+  $("#admin-pane-list").hidden = tab !== "list";
+  $("#admin-pane-add").hidden = tab !== "add";
+}
+
+function addCustomHabit({ label, group, xp, penalty, daysType }) {
+  if (!Array.isArray(state.habits)) state.habits = JSON.parse(JSON.stringify(DEFAULT_HABITS));
+  const cleanLabel = label.trim();
+  if (!cleanLabel) {
+    toast("Please enter a habit name", "⚠️");
+    return;
+  }
+  const cleanGroup = group.trim() || "Custom";
+  const numXp = Math.max(1, Math.min(1000, Number(xp) || 15));
+  const numPenalty = Math.max(0, Math.min(500, Number(penalty) || 0));
+
+  // Generate safe unique ID
+  const slug = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, "").substring(0, 16) || "habit";
+  let uniqueId = slug;
+  let counter = 1;
+  while (state.habits.some(h => h.id === uniqueId)) {
+    uniqueId = `${slug}${counter++}`;
+  }
+
+  let days = undefined;
+  if (daysType === "workdays") days = [1, 2, 3, 4, 5];
+  else if (daysType === "weekends") days = [6, 7];
+
+  const newHabit = {
+    id: uniqueId,
+    label: cleanLabel,
+    group: cleanGroup,
+    xp: numXp,
+    ...(numPenalty > 0 ? { penalty: numPenalty } : {}),
+    ...(days ? { days } : {}),
+  };
+
+  state.habits.push(newHabit);
+  save();
+  populateAdminGroupFilter();
+  renderAdminHabits();
+  updateAll({ fullHabits: true });
+  toast(`Added habit "${cleanLabel}" (+${numXp} XP)`, "✨", "toast-gold");
+  switchAdminTab("list");
+}
+
+function removeHabit(habitId) {
+  if (!Array.isArray(state.habits)) return;
+  const habit = state.habits.find(h => h.id === habitId);
+  if (!habit) return;
+
+  const msg = `Remove habit "${habit.label}"?\n\nThis habit will be removed from your daily tracker and scoring.`;
+  if (!confirm(msg)) return;
+
+  state.habits = state.habits.filter(h => h.id !== habitId);
+  save();
+  populateAdminGroupFilter();
+  renderAdminHabits();
+  updateAll({ fullHabits: true });
+  toast(`Removed "${habit.label}"`, "🗑");
+}
+
+function updateHabitXp(habitId, newXp) {
+  if (!Array.isArray(state.habits)) return;
+  const habit = state.habits.find(h => h.id === habitId);
+  if (!habit) return;
+  const val = Math.max(1, Math.min(1000, Number(newXp) || 10));
+  if (habit.xp === val) return;
+  habit.xp = val;
+  save();
+  updateAll({ fullHabits: true });
+  const totalXp = state.habits.reduce((s, h) => s + (Number(h.xp) || 0), 0);
+  $("#admin-habit-stats").textContent = `${state.habits.length} habits · ${totalXp} max XP/day`;
+}
+
+function updateHabitPenalty(habitId, newPenalty) {
+  if (!Array.isArray(state.habits)) return;
+  const habit = state.habits.find(h => h.id === habitId);
+  if (!habit) return;
+  const val = Math.max(0, Math.min(500, Number(newPenalty) || 0));
+  if (val > 0) habit.penalty = val;
+  else delete habit.penalty;
+  save();
+  updateAll({ fullHabits: true });
+}
+
+function restoreDefaultHabits() {
+  if (confirm("Restore all 25 factory default habits?\n\nAny custom habits you added or custom XP values you set will be reset.")) {
+    state.habits = JSON.parse(JSON.stringify(DEFAULT_HABITS));
+    save();
+    populateAdminGroupFilter();
+    renderAdminHabits();
+    updateAll({ fullHabits: true });
+    toast("Restored default habits", "↺", "toast-gold");
+  }
+}
+
+// Admin event listeners
+$("#btn-admin").addEventListener("click", () => openAdminModal("list"));
+$("#btn-manage-habits")?.addEventListener("click", () => openAdminModal("list"));
+
+modalAdmin.addEventListener("click", e => {
+  if (e.target === modalAdmin || e.target.closest("[data-close]")) closeAdminModal();
+});
+
+$("#tab-btn-habits").addEventListener("click", () => switchAdminTab("list"));
+$("#tab-btn-add").addEventListener("click", () => switchAdminTab("add"));
+
+$("#admin-search").addEventListener("input", e => {
+  adminSearchQuery = e.target.value;
+  renderAdminHabits();
+});
+
+$("#admin-group-filter").addEventListener("change", e => {
+  adminGroupFilterVal = e.target.value;
+  renderAdminHabits();
+});
+
+$("#habit-new-group").addEventListener("change", e => {
+  const isCustom = e.target.value === "__custom__";
+  $("#habit-custom-group").hidden = !isCustom;
+  if (isCustom) $("#habit-custom-group").focus();
+});
+
+$("#btn-cancel-add-habit").addEventListener("click", () => switchAdminTab("list"));
+
+$("#admin-add-habit-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const label = $("#habit-new-label").value;
+  const groupSel = $("#habit-new-group").value;
+  const customGroup = $("#habit-custom-group").value;
+  const group = groupSel === "__custom__" ? customGroup : groupSel;
+  const xp = $("#habit-new-xp").value;
+  const penalty = $("#habit-new-penalty").value;
+  const daysType = $("#habit-new-days").value;
+  addCustomHabit({ label, group, xp, penalty, daysType });
+  $("#admin-add-habit-form").reset();
+  $("#habit-custom-group").hidden = true;
+});
+
+$("#admin-habits-container").addEventListener("input", e => {
+  const input = e.target;
+  if (input.classList.contains("admin-xp-input")) {
+    updateHabitXp(input.dataset.id, input.value);
+  } else if (input.classList.contains("admin-penalty-input")) {
+    updateHabitPenalty(input.dataset.id, input.value);
+    input.closest(".admin-penalty-control")?.classList.toggle("inactive", Number(input.value) === 0);
+  }
+});
+
+$("#admin-habits-container").addEventListener("click", e => {
+  const delBtn = e.target.closest(".btn-delete-habit");
+  if (delBtn) {
+    removeHabit(delBtn.dataset.deleteId);
+  }
+});
+
+$("#btn-restore-default-habits").addEventListener("click", restoreDefaultHabits);
 
 /* ==========================================================================
    Clock + quote
@@ -2059,10 +2368,20 @@ function applyRemoteState(remote) {
   }
 }
 
-// bridge for js/sync.js (loaded as a module; this file is a classic script)
+// bridge for js/sync.js and extensions/tests
 window.WeekMaxxing = {
   getState: () => state,
   applyRemoteState,
+  getHabits,
+  addCustomHabit,
+  removeHabit,
+  updateHabitXp,
+  updateHabitPenalty,
+  restoreDefaultHabits,
+  openAdminModal,
+  closeAdminModal,
+  computeDay,
+  computeWeek,
 };
 
 state.selectedDay = Math.min(Math.max(state.selectedDay, 1), 7);
